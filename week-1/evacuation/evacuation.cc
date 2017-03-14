@@ -107,23 +107,26 @@ public:
       vector<size_t> edge_positions = graph[u];
 
       for(auto edge_position : edge_positions) {
+        for(int i = 0 ; i < 2; i++ ) { 
+          //          Edge e = i == 0 ? edges[edge_position] : edges[edge_position + 1];
+          if( i > 0)
+            edge_position++;
+          Edge e = edges[edge_position];
+          int from = e.from;
+          int to = e.to;
 
-        Edge e =  edges[edge_position];
+          // Edge has already been saturated and cannot be used.
+          if(e.capacity - e.flow <= 0 )
+            continue;
 
-        int from = e.from;
-        int to = e.to;
-
-        // Edge has already been saturated and cannot be used.
-        if(e.capacity - e.flow <= 0 )
-          continue;
-
-        //explore the edge endpoint [to]
-        if(dist[e.to] == undefined) {
-          dist[e.to] = dist[e.from]+1;
-          prev[e.to] = e.from;
-          path_edges[e.to] = edge_position; // store the edge where entered this vertex from
-          // add this end point to periphery
-          q.push(e.to);
+          //explore the edge endpoint [to]
+          if(dist[e.to] == undefined) {
+            dist[e.to] = dist[e.from]+1;
+            prev[e.to] = e.from;
+            path_edges[e.to] = edge_position; // store the edge where entered this vertex from
+            // add this end point to periphery
+            q.push(e.to);
+          }
         }
       }
     }
