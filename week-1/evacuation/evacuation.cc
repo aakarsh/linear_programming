@@ -1,32 +1,37 @@
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <queue>
-
-using std::vector;
-using std::queue;
-
-using namespace std;
+    #include <iostream>
+    #include <vector>
+    #include <algorithm>
+    #include <queue>
+    #include <map>
+    #include <utility>
 
 
-#ifdef DEBUG
-const bool debug = true;
-#else
-const bool debug = false;
-#endif
+    using std::pair;
+    using std::map;
+    using std::vector;
+    using std::queue;
+
+    using namespace std;
 
 
-/* This class implements a bit unusual scheme for storing edges of the graph,
- * in order to retrieve the backward edge for a given edge quickly. */
-class FlowGraph {
+    #ifdef DEBUG
+    const bool debug = true;
+    #else
+    const bool debug = false;
+    #endif
 
-public:
 
-  struct Edge { int from,to,capacity,flow; };
+    /* This class implements a bit unusual scheme for storing edges of the graph,
+    * in order to retrieve the backward edge for a given edge quickly. */
+    class FlowGraph {
 
-private:
-  /* List of all - forward and backward - edges */
-  vector<Edge> edges;
+    public:
+
+    struct Edge { int from,to,capacity,flow; };
+
+    private:
+    /* List of all - forward and backward - edges */
+    vector<Edge> edges;
 
   /**
    * These adjacency lists store only indices of edges in the edges list
@@ -124,7 +129,6 @@ public:
     }
 
     // represents path to source
-
     vector<size_t> retval;
     vector<size_t> path;
 
@@ -190,9 +194,6 @@ public:
     
     return retval;
   }
-
-
-
 
   size_t size() const {
     return graph.size();
@@ -267,11 +268,28 @@ FlowGraph read_data() {
   std::cin >> vertex_count >> edge_count;
 
   FlowGraph graph(vertex_count);
-
+  map<pair<int,int>,int> edge_capacity_map;
+  
   for (int i = 0; i < edge_count; ++i) {
     int u, v, capacity;
     std::cin >> u >> v >> capacity;
-    graph.add_edge(u - 1, v - 1, capacity);
+    pair<int,int> e = make_pair(u,v);
+    auto it = edge_capacity_map.find(e);
+    // collapse all edges betwn u,v into single capacity
+    if(it == edge_capacity_map.end()) {
+      edge_capacity_map[e] = capacity;
+    } else {
+      edge_capacity_map[e] += capacity;
+    }
+  }
+  
+  for(auto const & edge_capacity : edge_capacity_map) {
+    pair<int,int> uv = edge_capacity.first;
+    int capacity = edge_capacity.second;
+    int u = uv.first;
+    int v = uv.second;
+    if(capacity > 0)
+      graph.add_edge(u - 1, v - 1, capacity);
   }
 
   return graph;
