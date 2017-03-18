@@ -111,15 +111,18 @@ Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, 
 
   if(a[pivot_element.row][pivot_element.column] == 0){
     // we need to find a non zero eleement in this column and swap with this row.
+    
     int switch_row = pivot_element.row;
     while(switch_row < used_rows.size() && a[switch_row][pivot_element.column] == 0)
       switch_row++;
+    
     if(switch_row < used_rows.size()) {
       std::swap(a[pivot_element.row],a[switch_row]);
       std::swap(b[pivot_element.row],b[switch_row]);
     }
      
   }
+  
   if(debug)
     std::cerr<<"pivot:["<<pivot_element.row<<","<<pivot_element.column<<"]"<<std::endl;
   
@@ -159,7 +162,7 @@ void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
   for(int i = 0 ; i< a.size() ; i++ ) { // for each row
     if( i == pivot_element.row)
       continue;
-    int scale = -1*a[i][pivot_element.column]; // needed scaling
+    double scale = -1*a[i][pivot_element.column]; // needed scaling
     for(int j = 0 ; j < a[i].size(); j++) {
       a[i][j] += scale*a[pivot_element.row][j];
     }
