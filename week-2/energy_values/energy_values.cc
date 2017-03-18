@@ -34,6 +34,15 @@ struct Position {
   int row;
 };
 
+void print_vector(const std::string &label,std::vector<bool> v){
+  if(!debug)
+    return;
+  
+  std::cerr<<label<<":[";
+  for(bool item : v)
+    std::cerr<<" "<<item;
+  std::cerr<<"]"<<std::endl;
+}
 
 void print_matrix(const Matrix &a, const Column &b,Position &pivot ) {
   if(!debug)
@@ -83,23 +92,41 @@ Equation ReadEquation() {
 /**
  *
  */
-Position SelectPivotElement(const Matrix &a, std::vector <bool> &used_rows, std::vector <bool> &used_columns) {
+Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, std::vector <bool> &used_columns) {
   // This algorithm selects the first free element.
   // TODO You'll need to improve it to pass the problem.
   
   Position pivot_element(0, 0);
-    
+  
+  if(debug) {
+    print_vector("used_rows",used_rows);
+    print_vector("used_columns",used_columns);
+  }
+  
   while (used_rows[pivot_element.row])
     ++pivot_element.row;
-    
+
   while (used_columns[pivot_element.column])
     ++pivot_element.column;
 
+  if(a[pivot_element.row][pivot_element.column] == 0){
+    // we need to find a non zero eleement in this column and swap with this row.
+    int switch_row = pivot_element.row;
+    while(switch_row < used_rows.size() && a[switch_row][pivot_element.column] == 0)
+      switch_row++;
+    if(switch_row < used_rows.size()) {
+      std::swap(a[pivot_element.row],a[switch_row]);
+      std::swap(b[pivot_element.row],b[switch_row]);
+    }
+     
+  }
   if(debug)
     std::cerr<<"pivot:["<<pivot_element.row<<","<<pivot_element.column<<"]"<<std::endl;
   
   return pivot_element;
 }
+
+
 
 void SwapLines(Matrix &a, Column &b, std::vector <bool> &used_rows, Position &pivot_element) {
   
@@ -114,6 +141,9 @@ void SwapLines(Matrix &a, Column &b, std::vector <bool> &used_rows, Position &pi
     //std::swap(used_rows[pivot_element.column], used_rows[pivot_element.row]);
     pivot_element.row = pivot_element.column;
 }
+
+
+
 
 void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
   // 1. Scale the row based on the pivot row.
@@ -137,10 +167,15 @@ void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
   }
 }
 
+
+
 void MarkPivotElementUsed(const Position &pivot_element, std::vector <bool> &used_rows, std::vector <bool> &used_columns) {
     used_rows[pivot_element.row] = true;
     used_columns[pivot_element.column] = true;
 }
+
+
+
 
 Column SolveEquation(Equation equation) {
   
@@ -160,7 +195,7 @@ Column SolveEquation(Equation equation) {
       std::cerr<<"step :"<<step<<std::endl;
     }
     
-    Position pivot_element = SelectPivotElement(a, used_rows, used_columns);
+    Position pivot_element = SelectPivotElement(a,b, used_rows, used_columns);
     //Given position of pivot element
     SwapLines(a, b, used_rows, pivot_element);
     print_matrix(a,b,pivot_element);
