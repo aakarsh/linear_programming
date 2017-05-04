@@ -64,7 +64,7 @@ void print_matrix(const Matrix &a, const Column &b,Position &pivot ) {
 }
 
 Equation ReadEquation() {
-  int size;q
+  int size;
   std::cin >> size;
   // Ax = b
   // a - Represents the coefficient matrix
@@ -113,38 +113,48 @@ Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, 
   return pivot_element;
 }
 
-void SwapLines(Matrix &a, Column &b, std::vector <bool> &used_rows, Position &pivot_element) {
-    std::swap(a[pivot_element.column], a[pivot_element.row]);
-    std::swap(b[pivot_element.column], b[pivot_element.row]);
+void SwapLines(Matrix &a, Column &b,
+               std::vector <bool> &used_rows,
+               Position &pivot_pos) {
+  
+    std::swap(a[pivot_pos.column], a[pivot_pos.row]);
+    std::swap(b[pivot_pos.column], b[pivot_pos.row]);
 
-    bool temp(used_rows[pivot_element.column]);
-    used_rows[pivot_element.column] = used_rows[pivot_element.row];
-    used_rows[pivot_element.row] = temp;
+    bool temp(used_rows[pivot_pos.column]);
+    used_rows[pivot_pos.column] = used_rows[pivot_pos.row];
+    used_rows[pivot_pos.row] = temp;
     
     // TODO Fix compilation error 
-    //std::swap(used_rows[pivot_element.column], used_rows[pivot_element.row]);
-    pivot_element.row = pivot_element.column;
+    //std::swap(used_rows[pivot_pos.column], used_rows[pivot_pos.row]);
+    pivot_pos.row = pivot_pos.column;
 }
 
 void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
+
   // 1. Scale the row based on the pivot row.
   double value = a[pivot_element.row] [pivot_element.column];
   if(debug)
     std::cerr<<"Scaling by pivot value :"<<value<<std::endl;
-  
+
+  // scale pivot row
   for(int i = 0 ; i < a[pivot_element.column].size(); i++)
     a[pivot_element.row][i] /= value;
+  
   b[pivot_element.row] /= value;
 
-  // 2. Now that the pivot position is 1 eliminate all elements in the column. 
+  // 2. Now that the pivot value is 1 eliminate all elements in the column. 
   for(int i = 0 ; i< a.size() ; i++ ) { // for each row
     if( i == pivot_element.row)
       continue;
+    
     double scale = -1*a[i][pivot_element.column]; // needed scaling
+    
     for(int j = 0 ; j < a[i].size(); j++) {
       a[i][j] += scale*a[pivot_element.row][j];
     }
+    
     b[i] += scale*b[pivot_element.row];
+    
   }
 }
 
