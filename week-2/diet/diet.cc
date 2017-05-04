@@ -2,35 +2,36 @@
 #include <iostream>
 #include <vector>
 #include <cstdio>
+
 using namespace std;
 
 typedef vector<vector<double>> matrix;
 
-pair<int, vector<double>> solve_diet_problem(
-    int n, 
-    int m, 
-    matrix A, 
-    vector<double> b, 
-    vector<double> c) {
-
+pair<int, vector<double>> solve_diet_problem(int n, int m, matrix A,vector<double> b,vector<double> c) {
+  
   // Write your code here
-
+  // something goes here but idk w
   return {0, vector<double>(m, 0)};
 }
 
-int main(){
+int main() {
+  
   int n, m;
   cin >> n >> m;
+  
   matrix A(n, vector<double>(m));
+  
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < m; j++) {
       cin >> A[i][j];
     }
   }
+  
   vector<double> b(n);
   for (int i = 0; i < n; i++) {
     cin >> b[i];
   }
+  
   vector<double> c(m);
   for (int i = 0; i < m; i++) {
     cin >> c[i];
@@ -52,5 +53,6 @@ int main(){
       printf("Infinity\n");
       break;      
   }
+  
   return 0;
 }

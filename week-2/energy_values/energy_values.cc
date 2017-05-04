@@ -3,13 +3,13 @@
 #include <vector>
 #include <algorithm>
 
+
 const double EPS = 1e-6;
 const int PRECISION = 20;
 
 typedef std::vector<double> Column;
 typedef std::vector<double> Row;
 typedef std::vector<Row> Matrix;
-
 
 #ifdef DEBUG
 const bool debug = true;
@@ -19,17 +19,14 @@ const bool debug = false;
 
 struct Equation {
     Equation(const Matrix &a, const Column &b): a(a), b(b) {}
-
   // Represents Ax = b
   Matrix a; // coefficent matrix
   Column b; // result vector
 };
 
-
 /* Represents a pair which is position in coefficent matrix */
 struct Position {
   Position(int column, int row): column(column), row(row) {}
-
   int column;
   int row;
 };
@@ -37,7 +34,6 @@ struct Position {
 void print_vector(const std::string &label,std::vector<bool> v){
   if(!debug)
     return;
-  
   std::cerr<<label<<":[";
   for(bool item : v)
     std::cerr<<" "<<item;
@@ -48,11 +44,9 @@ void print_matrix(const Matrix &a, const Column &b,Position &pivot ) {
   if(!debug)
     return;
   int column_width = 8;
-  
   for(int i = 0 ; i < a.size()+1;i++)
     fprintf(stderr,"---------");
   fprintf(stderr,"\n" );
-  
   for(int i = 0 ; i < a.size(); i++) {
     for(int j = 0 ; j < a[i].size(); j++) {
       if(pivot.row == i && pivot.column == j)
@@ -63,8 +57,6 @@ void print_matrix(const Matrix &a, const Column &b,Position &pivot ) {
     fprintf(stderr," |%-+4.4f ",b[i]);
     fprintf(stderr,"\n");
   }
-
-
   for(int i = 0 ; i < a.size()+1;i++)
     fprintf(stderr,"---------");
   fprintf(stderr,"\n" );
@@ -72,20 +64,18 @@ void print_matrix(const Matrix &a, const Column &b,Position &pivot ) {
 }
 
 Equation ReadEquation() {
-  int size;
+  int size;q
   std::cin >> size;
   // Ax = b
   // a - Represents the coefficient matrix
   Matrix a(size, std::vector <double> (size, 0.0));
   // b - represents the result vector
   Column b(size, 0.0);
-    
   for (int row = 0; row < size; ++row) {
     for (int column = 0; column < size; ++column)
       std::cin >> a[row][column];
     std::cin >> b[row];
   }
-    
   return Equation(a, b);
 }
 
@@ -93,8 +83,6 @@ Equation ReadEquation() {
  *
  */
 Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, std::vector <bool> &used_columns) {
-  // This algorithm selects the first free element.
-  // TODO You'll need to improve it to pass the problem.
   
   Position pivot_element(0, 0);
   
@@ -105,13 +93,12 @@ Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, 
   
   while (used_rows[pivot_element.row])
     ++pivot_element.row;
-
+  
   while (used_columns[pivot_element.column])
     ++pivot_element.column;
-
+  
   if(a[pivot_element.row][pivot_element.column] == 0){
     // we need to find a non zero eleement in this column and swap with this row.
-    
     int switch_row = pivot_element.row;
     while(switch_row < used_rows.size() && a[switch_row][pivot_element.column] == 0)
       switch_row++;
@@ -120,19 +107,13 @@ Position SelectPivotElement(Matrix &a, Column &b,std::vector <bool> &used_rows, 
       std::swap(a[pivot_element.row],a[switch_row]);
       std::swap(b[pivot_element.row],b[switch_row]);
     }
-     
   }
-  
   if(debug)
     std::cerr<<"pivot:["<<pivot_element.row<<","<<pivot_element.column<<"]"<<std::endl;
-  
   return pivot_element;
 }
 
-
-
 void SwapLines(Matrix &a, Column &b, std::vector <bool> &used_rows, Position &pivot_element) {
-  
     std::swap(a[pivot_element.column], a[pivot_element.row]);
     std::swap(b[pivot_element.column], b[pivot_element.row]);
 
@@ -144,9 +125,6 @@ void SwapLines(Matrix &a, Column &b, std::vector <bool> &used_rows, Position &pi
     //std::swap(used_rows[pivot_element.column], used_rows[pivot_element.row]);
     pivot_element.row = pivot_element.column;
 }
-
-
-
 
 void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
   // 1. Scale the row based on the pivot row.
@@ -170,15 +148,10 @@ void ProcessPivotElement(Matrix &a, Column &b, const Position &pivot_element) {
   }
 }
 
-
-
 void MarkPivotElementUsed(const Position &pivot_element, std::vector <bool> &used_rows, std::vector <bool> &used_columns) {
     used_rows[pivot_element.row] = true;
     used_columns[pivot_element.column] = true;
 }
-
-
-
 
 Column SolveEquation(Equation equation) {
   
@@ -219,7 +192,6 @@ void PrintColumn(const Column &column) {
     
     for (int row = 0; row < size; ++row)
         std::cout << column[row] << std::endl;
-    
 }
 
 int main() {
