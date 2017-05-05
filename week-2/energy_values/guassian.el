@@ -171,16 +171,15 @@
            (used-cols (make-vector size nil)))
       (if g/debug
           (message "Before procesing : \n %s" (g/print-matrix (make-g/position :row 0 :column 0))))
-      (loop
-       for i from 0 below size do
-       (let* ((pivot-position (g/select-pivot used-rows used-cols))
-              (pivot-row (g/position-row pivot-position))
-              (pivot-col (g/position-column pivot-position)))
-         (g/process-pivot pivot-position)
-         (if g/debug
-             (message (g/print-matrix pivot-position)))
-         (aset used-rows pivot-row t)
-         (aset used-cols pivot-col t)))
-      g/b)))
+      (loop for i from 0 below size
+            for pivot-position = (g/select-pivot used-rows used-cols)
+            for pivot-row = (g/position-row pivot-position)
+            for pivot-col = (g/position-column pivot-position) do
+            (g/process-pivot pivot-position)
+            (if g/debug
+                (message (g/print-matrix pivot-position)))
+            (aset used-rows pivot-row t)
+            (aset used-cols pivot-col t)))
+    g/b))
 
 (g/gausian "tests/02")
