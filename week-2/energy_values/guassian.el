@@ -2,10 +2,11 @@
 
 ;; Admitedly this is way too imperative. This provides straight forward
 ;; and not necessarity efficent means of computing solution of Ax=b
-;; 
+;;
 ;; Solving equations of the form Ax=b
 (defvar g/A nil)
 (defvar g/b nil)
+
 (defstruct g/position row column)
 
 (defmacro g/A-at (i j)
@@ -24,6 +25,9 @@
 (defun g/current-line()
   (buffer-substring-no-properties
    (line-beginning-position) (line-end-position)))
+
+(defun g/num-lines()
+  (count-lines (point-min) (point-max)))
 
 (defun g/last-linep()
   (equal (line-beginning-position)
@@ -52,7 +56,7 @@
       (setf g/b (make-vector size 0))
 
       (forward-line 1)
-      (while (not (g/last-linep))
+      (while (< i (-  (g/num-lines) 1))
         (let ((j 0))
           (dolist (cur (split-string (g/current-line)))
             (if (< j size)
@@ -62,24 +66,47 @@
           (incf i)
           (forward-line 1)))))
 
+(defun g/swap-rows(r1 r2)
+  (let ((temp nil))
+    (loop for c from 0 below (g/ncols) do
+          (setf temp (g/A-at r1 c))
+          (setf (g/A-at r1 c) (g/A-at r2 c))
+          (setf (g/A-at r2 c) temp))
+    (setf temp (aref g/b r1))
+    (setf (aref g/b r1) (aref g/b r2))
+    (setf (aref g/b r2) temp)))
+
 (defun g/select-pivot(used_rows used_columns)
   (let ((retval (make-g/position :row 0 :column 0)))
+
     (loop for i from 0 below (length used_rows)
           while (aref used_rows i) do
           (incf (g/position-row retval)))
+
     (loop for i from 0 below (length used_columns)
           while (aref used_columns i) do
           (incf (g/position-column retval)))
-    (if (not (g/A-at-position retval))
-        ;; Need to swap rows.
-        (message "Need swapping..."))
-    retval))
+
+    (let* ((row (g/position-row retval))
+          (col (g/position-column retval))
+          (switch_row row))
+
+      (if (= 0 (g/A-at-position retval))
+          (progn
+            (loop for i from row below (g/nrows)
+                  while (and (< switch_row (g/nrows)) (= 0 (g/A-at switch_row col))) do
+                  (incf switch_row))
+            (if (< switch_row (g/nrows))
+                (g/swap-rows row switch_row)
+              (error "Switch row %d" switch_row))))
+    retval)))
 
 (defun g/process-pivot(pivot-pos)
-  (let* ((pivot-value (g/A-at-position pivot-pos))
+  (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
         (col (g/position-column pivot-pos))
         (row (g/position-row pivot-pos)))
-    ;; Scale Row By Pivot Value
+
+    ;; scale row by pivot value
     (loop for i from 0 below (g/ncols)
           do
           (setf (g/A-at row i)  (/ (g/A-at row i) pivot-value)))
@@ -88,42 +115,44 @@
 
     ;; pivot row  1 at pivot poistion from scaling
     ;; use it to eliminate all values in pivot column.
-    (loop for i from 0 below (g/nrows)
-          for j from 0 below (g/ncols)
-          do
-          (let ((scale (* -1.0 (g/A-at i col))))
-            (unless (equal i row) ;; add scaled pivot columen value to this element
-              (incf  (g/A-at i j)  (* scale (g/A-at row j)))
-              (incf (aref g/b i) (* scale (aref g/b row)))
-              )))))
+
+    (loop
+     for r from 0 below (g/nrows) do
+     (unless (equal r row)
+       ;; to eliminated A(r,col) entry we scale the pivot row
+       ;; by -A(r,col) then added it
+       (let ((scale (* -1.0 (g/A-at r col))))
+         (loop for c from 0 below (g/ncols) do
+               (incf (g/A-at r c) (* scale (g/A-at row c))))
+         (incf (aref g/b r) (* scale (aref g/b row))))))    
+    ))
 
 
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
         (pcol (g/position-column pivot-pos))
-        (retval ""))    
+        (retval ""))
   (dotimes (i (g/ncols))
     (setf retval (concat retval  "--------")))
   (setf retval (concat retval "\n"))
   (dotimes (i (g/nrows))
     (dotimes (j (g/ncols))
       (if (and (equal prow i) (equal pcol j))
-          (setf retval (concat retval  (format "[%-4.2f]" (g/A-at i j))))
+          (setf retval (concat retval (format "[%-4.2f]" (g/A-at i j))))
         (setf retval (concat retval (format  " %-4.2f " (g/A-at i j))))))
-    
       (setf retval (concat retval (format  "|%-4.2f\n" (aref g/b i)))))
     (dotimes (i (g/ncols))
       (setf retval (concat retval  "--------")))
     (setf retval (concat retval "\n"))
     retval))
 
-
-(defun g/gausian(input-file)  
+(defun g/gausian(input-file)
   (g/read-equation input-file)
   (let* ((size (g/ncols))
          (used-rows (make-vector size nil))
          (used-cols (make-vector size nil)))
-    
+    (if g/debug
+        (message "Before procesing : \n %s" (g/print-matrix (make-g/position :row 0 :column 0))))
     (loop
      for i from 0 below size do
      (let ((pivot-position (g/select-pivot used-rows used-cols)))
@@ -135,5 +164,4 @@
     g/b))
 
 
-
-(g/gausian "tests/02")
+(g/gausian "tests/05")
