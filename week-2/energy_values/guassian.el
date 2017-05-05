@@ -32,8 +32,8 @@
 
 (defun g/make-matrix-2d(r c init)
   (let ((retval (make-vector r nil)))
-    (loop for i from 0 below r do
-          (aset retval i (make-vector c init)))
+    (loop for cell across-ref retval do
+          (setf cell (make-vector c init)))
     retval))
 
 (defun g/read-equation(input-file)
@@ -43,7 +43,6 @@
     (goto-char 0)
     (let ((size (string-to-number (g/current-line)))
           (i 0))
-
       ;; Create the matrix
       (setf g/size size)
       (setf g/A (g/make-matrix-2d size size 0))
@@ -60,40 +59,49 @@
           (incf i)
           (forward-line 1)))))
 
+(defmacro g/swapf(r1 r2)
+  `(let ((temp nil))
+     (setf  temp ,r2)
+     (setf ,r2 ,r1)
+     (setf ,r1 temp)))
+
+(defun g/vector-swap (v p1 p2)
+  (g/swapf (aref v p1) (aref v p2)))
+
 (defun g/swap-rows(r1 r2)
-  (let ((temp nil))
-    (loop for c from 0 below (g/ncols) do
-          (setf temp (g/A-at r1 c))
-          (setf (g/A-at r1 c) (g/A-at r2 c))
-          (setf (g/A-at r2 c) temp))
-    (setf temp (aref g/b r1))
-    (setf (aref g/b r1) (aref g/b r2))
-    (setf (aref g/b r2) temp)))
+  (loop for c from 0 below (g/ncols) do
+        (g/swapf (g/A-at r1 c) (g/A-at r2 c)))
+  (g/vector-swap g/b r1 r2))
+
+(defun g/first-false-position(ls)
+  "Position of first unset element in vector."
+  (let ((pos 0))
+    (loop for v across ls while v do (incf pos))
+    pos))
 
 (defun g/select-pivot(used_rows used_columns)
-  (let ((retval (make-g/position :row 0 :column 0)))
+  (let ((pivot (make-g/position :row 0 :column 0)))
+    
+    (setf (g/position-row pivot)
+          (g/first-false-position used_rows))
+    
+    (setf (g/position-column pivot)
+          (g/first-false-position used_columns))
 
-    (loop for i from 0 below (length used_rows)
-          while (aref used_rows i) do
-          (incf (g/position-row retval)))
-
-    (loop for i from 0 below (length used_columns)
-          while (aref used_columns i) do
-          (incf (g/position-column retval)))
-
-    (let* ((row (g/position-row retval))
-          (col (g/position-column retval))
+    (let* ((row (g/position-row pivot))
+          (col (g/position-column pivot))
           (switch_row row))
 
-      (if (= 0 (g/A-at-position retval))
+      (if (= 0 (g/A-at-position pivot))
           (progn
             (loop for i from row below (g/nrows)
-                  while (and (< switch_row (g/nrows)) (= 0 (g/A-at switch_row col))) do
-                  (incf switch_row))
+                  while (and (< switch_row (g/nrows))
+                             (= 0 (g/A-at switch_row col)))
+                  do (incf switch_row))
             (if (< switch_row (g/nrows))
                 (g/swap-rows row switch_row)
               (error "Switch row %d" switch_row))))
-    retval)))
+      pivot)))
 
 (defmacro g/divf(place value)
   `(setf ,place (/ ,place  ,value)))
@@ -105,13 +113,12 @@
   (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
         (col (g/position-column pivot-pos))
         (row (g/position-row pivot-pos)))
-    
+
     ;; scale row by pivot value
     (loop for i from 0 below (g/ncols) do
           (g/divf (g/A-at row i) pivot-value))
-    
-    (g/divf (aref g/b row) pivot-value)
 
+    (g/divf (aref g/b row) pivot-value)
     ;; pivot row  1 at pivot poistion from scaling
     ;; use it to eliminate all values in pivot column.
 
@@ -122,7 +129,7 @@
        (let ((scale (* -1.0 (g/A-at r col))))
          (loop for c from 0 below (g/ncols) do
                (incf (g/A-at r c) (* scale (g/A-at row c))))
-         (incf (aref g/b r) (* scale (aref g/b row))))))    
+         (incf (aref g/b r) (* scale (aref g/b row))))))
     ))
 
 (defun g/print-matrix (pivot-pos)
@@ -158,12 +165,12 @@
        for i from 0 below size do
        (let* ((pivot-position (g/select-pivot used-rows used-cols))
               (pivot-row (g/position-row pivot-position))
-              (pivot-col (g/position-column pivot-position)))       
+              (pivot-col (g/position-column pivot-position)))
          (g/process-pivot pivot-position)
          (if g/debug
              (message (g/print-matrix pivot-position)))
          (aset used-rows pivot-row t)
-         (aset used-cols pivot-col t)))    
+         (aset used-cols pivot-col t)))
       g/b)))
 
-(g/gausian "tests/04")
+(g/gausian "tests/02")
