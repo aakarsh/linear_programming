@@ -39,6 +39,26 @@
           (setf cell (make-vector c init)))
     retval))
 
+(defmacro g/swapf(r1 r2)
+  `(let ((temp nil))
+     (setf  temp ,r2)
+     (setf ,r2 ,r1)
+     (setf ,r1 temp)))
+
+(defun g/vector-swap (v p1 p2)
+  (g/swapf (aref v p1) (aref v p2)))
+
+(defun g/swap-rows(r1 r2)
+  (loop for c from 0 below (g/ncols) do
+        (g/swapf (g/A-at r1 c) (g/A-at r2 c)))
+  (g/vector-swap g/b r1 r2))
+
+(defmacro g/divf(place value)
+  `(setf ,place (/ ,place  ,value)))
+
+(defmacro g/concatf(place value &rest rest)
+  `(setf ,place (concat ,place ,value ,@rest)))
+
 (defun g/read-equation(input-file)
   "Read the equation from input file into g/A and g/b"
   (with-temp-buffer
@@ -63,20 +83,6 @@
             (incf j)))
         (incf i)
         (forward-line 1)))))
-
-(defmacro g/swapf(r1 r2)
-  `(let ((temp nil))
-     (setf  temp ,r2)
-     (setf ,r2 ,r1)
-     (setf ,r1 temp)))
-
-(defun g/vector-swap (v p1 p2)
-  (g/swapf (aref v p1) (aref v p2)))
-
-(defun g/swap-rows(r1 r2)
-  (loop for c from 0 below (g/ncols) do
-        (g/swapf (g/A-at r1 c) (g/A-at r2 c)))
-  (g/vector-swap g/b r1 r2))
 
 (defun g/first-false-position(ls)
   "Position of first unset element in vector."
@@ -106,12 +112,6 @@
                 (g/swap-rows row switch_row)
               (error "Switch row %d" switch_row))))
       pivot)))
-
-(defmacro g/divf(place value)
-  `(setf ,place (/ ,place  ,value)))
-
-(defmacro g/concatf(place value &rest rest)
-  `(setf ,place (concat ,place ,value ,@rest)))
 
 (defun g/process-pivot(pivot-pos)
   (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
