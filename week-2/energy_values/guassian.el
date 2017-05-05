@@ -29,14 +29,6 @@
 (defun g/num-lines()
   (count-lines (point-min) (point-max)))
 
-(defun g/last-linep()
-  (equal (line-beginning-position)
-         (let ((position-eol 0))
-           (save-excursion
-             (goto-char (point-max))
-             (setf position-eol (line-beginning-position)))
-           position-eol)))
-
 (defun g/make-matrix-2d(r c init)
   (let ((retval (make-vector r nil)))
     (loop for i from 0 below r do
