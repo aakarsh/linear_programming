@@ -33,7 +33,7 @@
 (defun g/make-matrix-2d(r c init)
   (let ((retval (make-vector r nil)))
     (loop for i from 0 below r do
-        (setf (aref retval i) (make-vector c init)))
+          (aset retval i (make-vector c init)))
     retval))
 
 (defun g/read-equation(input-file)
@@ -166,5 +166,4 @@
          (aset used-cols pivot-col t)))    
       g/b)))
 
-
-(g/gausian "tests/01")
+(g/gausian "tests/04")
