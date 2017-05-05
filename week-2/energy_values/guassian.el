@@ -5,6 +5,7 @@
 ;;
 ;; Solving equations of the form Ax=b
 (defvar g/A nil)
+(defvar g/size 0)
 (defvar g/b nil)
 
 (defstruct g/position row column)
@@ -44,6 +45,7 @@
           (i 0))
 
       ;; Create the matrix
+      (setf g/size size)
       (setf g/A (g/make-matrix-2d size size 0))
       (setf g/b (make-vector size 0))
 
@@ -93,23 +95,27 @@
               (error "Switch row %d" switch_row))))
     retval)))
 
+(defmacro g/divf(place value)
+  `(setf ,place (/ ,place  ,value)))
+
+(defmacro g/concatf(place value)
+  `(setf ,place (concat ,place ,value)))
+
 (defun g/process-pivot(pivot-pos)
   (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
         (col (g/position-column pivot-pos))
         (row (g/position-row pivot-pos)))
-
+    
     ;; scale row by pivot value
-    (loop for i from 0 below (g/ncols)
-          do
-          (setf (g/A-at row i)  (/ (g/A-at row i) pivot-value)))
-
-    (setf (aref g/b row) (/ (aref g/b row) pivot-value))
+    (loop for i from 0 below (g/ncols) do
+          (g/divf (g/A-at row i) pivot-value))
+    
+    (g/divf (aref g/b row) pivot-value)
 
     ;; pivot row  1 at pivot poistion from scaling
     ;; use it to eliminate all values in pivot column.
 
-    (loop
-     for r from 0 below (g/nrows) do
+    (loop for r from 0 below (g/nrows) do
      (unless (equal r row)
        ;; to eliminated A(r,col) entry we scale the pivot row
        ;; by -A(r,col) then added it
@@ -119,41 +125,46 @@
          (incf (aref g/b r) (* scale (aref g/b row))))))    
     ))
 
-
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
         (pcol (g/position-column pivot-pos))
         (retval ""))
-  (dotimes (i (g/ncols))
-    (setf retval (concat retval  "--------")))
-  (setf retval (concat retval "\n"))
-  (dotimes (i (g/nrows))
-    (dotimes (j (g/ncols))
-      (if (and (equal prow i) (equal pcol j))
-          (setf retval (concat retval (format "[%-4.2f]" (g/A-at i j))))
-        (setf retval (concat retval (format  " %-4.2f " (g/A-at i j))))))
-      (setf retval (concat retval (format  "|%-4.2f\n" (aref g/b i)))))
     (dotimes (i (g/ncols))
-      (setf retval (concat retval  "--------")))
-    (setf retval (concat retval "\n"))
+      (g/concatf retval "--------"))
+    (g/concatf retval "\n")
+    (loop
+     for i from 0 below (g/nrows) do
+     (loop
+      for j from 0 below (g/ncols) do
+      (if (and (equal prow i) (equal pcol j))
+          (g/concatf retval  (format "[%-4.2f]" (g/A-at i j)))
+          (g/concatf retval (format  " %-4.2f " (g/A-at i j)))))
+      (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
+    (dotimes (i (g/ncols))
+      (g/concatf retval  "--------"))
+    (g/concatf retval "\n")
     retval))
 
 (defun g/gausian(input-file)
   (g/read-equation input-file)
-  (let* ((size (g/ncols))
-         (used-rows (make-vector size nil))
-         (used-cols (make-vector size nil)))
-    (if g/debug
-        (message "Before procesing : \n %s" (g/print-matrix (make-g/position :row 0 :column 0))))
-    (loop
-     for i from 0 below size do
-     (let ((pivot-position (g/select-pivot used-rows used-cols)))
-       (g/process-pivot pivot-position)
-       (if g/debug
-           (message (g/print-matrix pivot-position)))
-       (setf (aref used-rows (g/position-row pivot-position)) t)
-       (setf (aref used-cols (g/position-column pivot-position)) t)))
-    g/b))
+  (if (= g/size 0)
+      []
+    (let* ((size (g/ncols))
+           (used-rows (make-vector size nil))
+           (used-cols (make-vector size nil)))
+      (if g/debug
+          (message "Before procesing : \n %s" (g/print-matrix (make-g/position :row 0 :column 0))))
+      (loop
+       for i from 0 below size do
+       (let* ((pivot-position (g/select-pivot used-rows used-cols))
+              (pivot-row (g/position-row pivot-position))
+              (pivot-col (g/position-column pivot-position)))       
+         (g/process-pivot pivot-position)
+         (if g/debug
+             (message (g/print-matrix pivot-position)))
+         (aset used-rows pivot-row t)
+         (aset used-cols pivot-col t)))    
+      g/b)))
 
 
-(g/gausian "tests/05")
+(g/gausian "tests/01")
