@@ -75,9 +75,8 @@
 
 (defun g/first-false-position(ls)
   "Position of first unset element in vector."
-  (let ((pos 0))
-    (loop for v across ls while v do (incf pos))
-    pos))
+  (loop with pos = 0 for v across ls while v do (incf pos)
+        finally (return pos)))
 
 (defun g/select-pivot(used_rows used_columns)
   (let ((pivot (make-g/position :row 0 :column 0)))
@@ -106,8 +105,8 @@
 (defmacro g/divf(place value)
   `(setf ,place (/ ,place  ,value)))
 
-(defmacro g/concatf(place value)
-  `(setf ,place (concat ,place ,value)))
+(defmacro g/concatf(place value &rest rest)
+  `(setf ,place (concat ,place ,value ,@rest)))
 
 (defun g/process-pivot(pivot-pos)
   (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
@@ -135,21 +134,16 @@
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
         (pcol (g/position-column pivot-pos))
-        (retval ""))
-    (dotimes (i (g/ncols))
-      (g/concatf retval "--------"))
-    (g/concatf retval "\n")
-    (loop
-     for i from 0 below (g/nrows) do
-     (loop
-      for j from 0 below (g/ncols) do
+        (retval ""))    
+    (g/concatf retval (loop repeat (g/ncols) concat "---------") "\n")
+    
+    (loop for i from 0 below (g/nrows) do
+     (loop for j from 0 below (g/ncols) do
       (if (and (equal prow i) (equal pcol j))
           (g/concatf retval  (format "[%-4.2f]" (g/A-at i j)))
           (g/concatf retval (format  " %-4.2f " (g/A-at i j)))))
       (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
-    (dotimes (i (g/ncols))
-      (g/concatf retval  "--------"))
-    (g/concatf retval "\n")
+    (g/concatf retval (loop repeat (g/ncols) concat "---------") "\n")
     retval))
 
 (defun g/gausian(input-file)
