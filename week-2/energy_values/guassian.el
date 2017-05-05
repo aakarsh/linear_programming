@@ -52,7 +52,7 @@
       (setf g/b (make-vector size 0))
 
       (forward-line 1)
-      
+
       (while (< i (-  (g/num-lines) 1))
         (let ((j 0))
           (loop for cur in (split-string (g/current-line)) do
@@ -60,8 +60,8 @@
             (if (< j size)
                 (g/matrix-setf g/A i j cur)
               (aset g/b i cur))
-            (incf j)))        
-        (incf i)        
+            (incf j)))
+        (incf i)
         (forward-line 1)))))
 
 (defmacro g/swapf(r1 r2)
@@ -85,10 +85,10 @@
 
 (defun g/select-pivot(used_rows used_columns)
   (let ((pivot (make-g/position :row 0 :column 0)))
-    
+
     (setf (g/position-row pivot)
           (g/first-false-position used_rows))
-    
+
     (setf (g/position-column pivot)
           (g/first-false-position used_columns))
 
@@ -139,16 +139,27 @@
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
         (pcol (g/position-column pivot-pos))
-        (retval ""))    
-    (g/concatf retval (loop repeat (g/ncols) concat "---------") "\n")
-    
+        (retval ""))
+
+    (defun pivot-cellp(i j)
+      (and (equal prow  i) (equal pcol j))) 
+
+    (defun cell-format (i j)
+      (format
+       (if (pivot-cellp i j) "[%-4.2f]" " %-4.2f ") (g/A-at i j)))
+
+    (defun vline(num)
+      (concat (loop repeat num concat "--------") "\n"))
+
+    (g/concatf retval (vline (g/ncols)))
+
     (loop for i from 0 below (g/nrows) do
-     (loop for j from 0 below (g/ncols) do
-      (if (and (equal prow i) (equal pcol j))
-          (g/concatf retval  (format "[%-4.2f]" (g/A-at i j)))
-          (g/concatf retval (format  " %-4.2f " (g/A-at i j)))))
-      (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
-    (g/concatf retval (loop repeat (g/ncols) concat "---------") "\n")
+          (loop for j from 0 below (g/ncols) do 
+                (g/concatf retval (cell-format i j)))
+          (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
+
+    (g/concatf retval (vline (g/ncols)))
+    
     retval))
 
 (defun g/gausian(input-file)
