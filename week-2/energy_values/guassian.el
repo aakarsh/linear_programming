@@ -13,6 +13,9 @@
 (defmacro g/A-at (i j)
   `(aref (aref g/A ,i) ,j))
 
+(defmacro g/matrix-setf(m i j value)
+  `(setf (aref (aref ,m ,i ) ,j)  ,value))
+
 (defmacro g/A-at-position(pos)
   `(g/A-at (g/position-row ,pos)
            (g/position-column ,pos)))
@@ -49,15 +52,17 @@
       (setf g/b (make-vector size 0))
 
       (forward-line 1)
+      
       (while (< i (-  (g/num-lines) 1))
         (let ((j 0))
-          (dolist (cur (split-string (g/current-line)))
+          (loop for cur in (split-string (g/current-line)) do
+            (setf cur (string-to-number cur))
             (if (< j size)
-                (setf (g/A-at i j) (string-to-number cur))
-              (setf (aref g/b i) (string-to-number cur)))
-            (incf j)))
-          (incf i)
-          (forward-line 1)))))
+                (g/matrix-setf g/A i j cur)
+              (aset g/b i cur))
+            (incf j)))        
+        (incf i)        
+        (forward-line 1)))))
 
 (defmacro g/swapf(r1 r2)
   `(let ((temp nil))
