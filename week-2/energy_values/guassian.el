@@ -126,15 +126,15 @@
     ;; pivot row  1 at pivot poistion from scaling
     ;; use it to eliminate all values in pivot column.
 
-    (loop for r from 0 below (g/nrows) do
+    (loop for r from 0 below (g/nrows)
+          for scale = (* -1.0 (g/A-at r col)) do
      (unless (equal r row)
        ;; to eliminated A(r,col) entry we scale the pivot row
        ;; by -A(r,col) then added it
-       (let ((scale (* -1.0 (g/A-at r col))))
          (loop for c from 0 below (g/ncols) do
                (incf (g/A-at r c) (* scale (g/A-at row c))))
-         (incf (aref g/b r) (* scale (aref g/b row))))))
-    ))
+         (incf (aref g/b r) (* scale (aref g/b row)))))))
+
 
 
 (defun g/print-matrix (pivot-pos)
