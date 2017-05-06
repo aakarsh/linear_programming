@@ -33,11 +33,9 @@
 (defun g/num-lines()
   (count-lines (point-min) (point-max)))
 
-(defun g/make-matrix-2d(r c init)
-  (let ((retval (make-vector r nil)))
-    (loop for cell across-ref retval do
-          (setf cell (make-vector c init)))
-    retval))
+(defun g/make-matrix-2d(rows cols cell-value)
+  (loop repeat rows vconcat
+        (vector (loop repeat cols vconcat (make-vector 1 cell-value)))))
 
 (defmacro g/swapf(r1 r2)
   `(let ((temp nil))
@@ -135,6 +133,7 @@
                (incf (g/A-at r c) (* scale (g/A-at row c))))
          (incf (aref g/b r) (* scale (aref g/b row))))))
     ))
+
 
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
