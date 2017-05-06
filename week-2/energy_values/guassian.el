@@ -1,9 +1,8 @@
-(defvar g/debug 1)
-
 ;; Admitedly this is way too imperative. This provides straight forward
 ;; and not necessarity efficent means of computing solution of Ax=b
 ;;
 ;; Solving equations of the form Ax=b
+(defvar g/debug 1)
 (defvar g/A nil)
 (defvar g/size 0)
 (defvar g/b nil)
@@ -83,34 +82,31 @@
       (loop for current-line in (g/fetch-lines (g/num-lines))
             for i = 0 then (+ i 1) do
             (loop for cell-string in (split-string current-line)
-                  for n = (string-to-number cell-string)
+                  for cell-value = (string-to-number cell-string)
                   for j = 0 then (+ j 1) do
             (if (< j size)
-                (g/matrix-setf g/A i j n)
-              (aset g/b i n)))))))
+                (g/matrix-setf g/A i j cell-value)
+              (aset g/b i cell-value)))))))
 
 (defun g/first-unused(ls)
   "Position of first unset element in vector."
   (loop with pos = 0 for v across ls while v do (incf pos)
         finally (return pos)))
 
-(defun g/select-pivot(used_rows used_columns)  
-  (letf* ((pivot
-           (make-g/position :row    (g/first-unused used_rows)
-                            :column (g/first-unused used_columns)))
+(defun g/select-pivot(used_rows used_columns)
+  (letf* ((pivot  (make-g/position :row    (g/first-unused used_rows)
+                                :column (g/first-unused used_columns)))
           (row (g/position-row pivot))
           (col (g/position-column pivot))
           (switch_row row))
-    
     (if (= 0 (g/A-at-position pivot))
         (progn
-          (loop for i from row below (g/nrows)
+          (loop for i from row below (g/nrows)                
                 while (and (< switch_row (g/nrows))
                            (= 0 (g/A-at switch_row col)))
-                do (incf switch_row))
+                count t into switch_row)          
           (if (< switch_row (g/nrows))
-              (g/swap-rows row switch_row)
-            (error "Switch row %d" switch_row))))
+              (g/swap-rows row switch_row))))
     pivot))
 
 (defun g/process-pivot(pivot-pos)
@@ -134,8 +130,6 @@
          (loop for c from 0 below (g/ncols) do
                (incf (g/A-at r c) (* scale (g/A-at row c))))
          (incf (aref g/b r) (* scale (aref g/b row)))))))
-
-
 
 (defun g/print-matrix (pivot-pos)
   (let ((prow (g/position-row pivot-pos))
@@ -175,7 +169,9 @@
       (loop for i from 0 below size
             for pivot-position = (g/select-pivot used-rows used-cols)
             for pivot-row = (g/position-row pivot-position)
-            for pivot-col = (g/position-column pivot-position) do
+            for pivot-col = (g/position-column pivot-position)
+            while (not (= (g/A-at pivot-row pivot-col) 0))
+            do
             (g/process-pivot pivot-position)
             (if g/debug
                 (message (g/print-matrix pivot-position)))
@@ -183,4 +179,9 @@
             (aset used-cols pivot-col t)))
     g/b))
 
-(g/gausian "tests/02")
+(progn
+  (assert (equal (g/gausian "tests/01") []))
+  (assert (equal (g/gausian "tests/02") [1.0 5.0 4.0 3.0]))
+  (assert (equal (g/gausian "tests/03") [3.0 0.0]))
+  (assert (equal (g/gausian "tests/04") [0.19999999999999996 0.39999999999999997]))
+  (assert (equal (g/gausian "tests/05") [1.0 3.0 5.0 0.0])))
