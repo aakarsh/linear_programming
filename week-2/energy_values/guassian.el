@@ -82,34 +82,29 @@
         (incf i)
         (forward-line 1)))))
 
-(defun g/first-false-position(ls)
+(defun g/first-unused(ls)
   "Position of first unset element in vector."
   (loop with pos = 0 for v across ls while v do (incf pos)
         finally (return pos)))
 
-(defun g/select-pivot(used_rows used_columns)
-  (let ((pivot (make-g/position :row 0 :column 0)))
-
-    (setf (g/position-row pivot)
-          (g/first-false-position used_rows))
-
-    (setf (g/position-column pivot)
-          (g/first-false-position used_columns))
-
-    (let* ((row (g/position-row pivot))
+(defun g/select-pivot(used_rows used_columns)  
+  (letf* ((pivot
+           (make-g/position :row    (g/first-unused used_rows)
+                            :column (g/first-unused used_columns)))
+          (row (g/position-row pivot))
           (col (g/position-column pivot))
           (switch_row row))
-
-      (if (= 0 (g/A-at-position pivot))
-          (progn
-            (loop for i from row below (g/nrows)
-                  while (and (< switch_row (g/nrows))
-                             (= 0 (g/A-at switch_row col)))
-                  do (incf switch_row))
-            (if (< switch_row (g/nrows))
-                (g/swap-rows row switch_row)
-              (error "Switch row %d" switch_row))))
-      pivot)))
+    
+    (if (= 0 (g/A-at-position pivot))
+        (progn
+          (loop for i from row below (g/nrows)
+                while (and (< switch_row (g/nrows))
+                           (= 0 (g/A-at switch_row col)))
+                do (incf switch_row))
+          (if (< switch_row (g/nrows))
+              (g/swap-rows row switch_row)
+            (error "Switch row %d" switch_row))))
+    pivot))
 
 (defun g/process-pivot(pivot-pos)
   (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
