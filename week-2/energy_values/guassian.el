@@ -90,12 +90,13 @@
 
 (defun g/first-unused(ls)
   "Position of first unset element in vector."
-  (loop with pos = 0 for v across ls while v do (incf pos)
-        finally (return pos)))
+  (loop  for v across ls
+         for pos = 0 then (+ pos 1) while v
+         finally (return pos)))
 
 (defun g/select-pivot(used_rows used_columns)
   (letf* ((pivot  (make-g/position :row    (g/first-unused used_rows)
-                                :column (g/first-unused used_columns)))
+                                   :column (g/first-unused used_columns)))
           (row (g/position-row pivot))
           (col (g/position-column pivot))
           (switch_row row))
@@ -161,12 +162,11 @@
   (g/read-equations input-file)
   (if (= g/size 0)
       []
-    (let* ((size (g/ncols))
-           (used-rows (make-vector size nil))
-           (used-cols (make-vector size nil)))
-      (if g/debug
-          (message "Before procesing : \n %s" (g/print-matrix (make-g/position :row 0 :column 0))))
-      (loop for i from 0 below size
+      (loop
+       with size = (g/ncols)
+       with used-rows = (make-vector size nil)
+       with used-cols = (make-vector size nil)  
+       for i from 0 below size
             for pivot-position = (g/select-pivot used-rows used-cols)
             for pivot-row = (g/position-row pivot-position)
             for pivot-col = (g/position-column pivot-position)
@@ -176,8 +176,8 @@
             (if g/debug
                 (message (g/print-matrix pivot-position)))
             (aset used-rows pivot-row t)
-            (aset used-cols pivot-col t)))
-    g/b))
+            (aset used-cols pivot-col t)
+            finally (return  g/b))))
 
 (progn
   (assert (equal (g/gausian "tests/01") []))
