@@ -57,30 +57,37 @@
 (defmacro g/concatf(place value &rest rest)
   `(setf ,place (concat ,place ,value ,@rest)))
 
-(defun g/read-equation(input-file)
+(defun g/fetch-lines(n)
+  (let ((reg-begin nil)
+        (reg-end nil))
+  (save-excursion
+    (goto-char (line-beginning-position))
+    (setf reg-begin (point)) 
+    (forward-line n)
+    (goto-char (line-beginning-position))
+    (setf reg-end (point)))
+  (split-string (buffer-substring-no-properties reg-begin reg-end) "\n" t)))
+
+(defun g/read-equations(input-file)
   "Read the equation from input file into g/A and g/b"
   (with-temp-buffer
     (insert-file-contents input-file t)
     (goto-char 0)
-    (let ((size (string-to-number (g/current-line)))
-          (i 0))
-      ;; Create the matrix
+    (let ((size (string-to-number (g/current-line))))
       (setf g/size size)
       (setf g/A (g/make-matrix-2d size size 0))
       (setf g/b (make-vector size 0))
 
-      (forward-line 1)
+      (forward-line 1)      
 
-      (while (< i (-  (g/num-lines) 1))
-        (let ((j 0))
-          (loop for cur in (split-string (g/current-line)) do
-            (setf cur (string-to-number cur))
+      (loop for current-line in (g/fetch-lines (g/num-lines))
+            for i = 0 then (+ i 1) do
+            (loop for cell-string in (split-string current-line)
+                  for n = (string-to-number cell-string)
+                  for j = 0 then (+ j 1) do
             (if (< j size)
-                (g/matrix-setf g/A i j cur)
-              (aset g/b i cur))
-            (incf j)))
-        (incf i)
-        (forward-line 1)))))
+                (g/matrix-setf g/A i j n)
+              (aset g/b i n)))))))
 
 (defun g/first-unused(ls)
   "Position of first unset element in vector."
@@ -157,7 +164,7 @@
     retval))
 
 (defun g/gausian(input-file)
-  (g/read-equation input-file)
+  (g/read-equations input-file)
   (if (= g/size 0)
       []
     (let* ((size (g/ncols))
