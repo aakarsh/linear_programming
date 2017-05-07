@@ -64,29 +64,39 @@
     (setf reg-begin (point)) 
     (forward-line n)
     (goto-char (line-beginning-position))
-    (setf reg-end (point)))
-  (split-string (buffer-substring-no-properties reg-begin reg-end) "\n" t)))
+    (if (equal (point) reg-begin)
+        (setf reg-end (line-end-position))
+      (setf reg-end (point))))
+  (forward-line n) ;; change buffer state so curser is n-lines ahead
+  (let ((region (buffer-substring-no-properties reg-begin reg-end)))
+    (split-string region "\n" t))))
+
+(defun g/fetch-line()
+  (car (g/fetch-lines 1)))
 
 (defun g/read-equations(input-file)
   "Read the equation from input file into g/A and g/b"
   (with-temp-buffer
     (insert-file-contents input-file t)
     (goto-char 0)
-    (let ((size (string-to-number (g/current-line))))
-      (setf g/size size)
-      (setf g/A (g/make-matrix-2d size size 0))
-      (setf g/b (make-vector size 0))
-
-      (forward-line 1)      
-
-      (loop for current-line in (g/fetch-lines (g/num-lines))
-            for i = 0 then (+ i 1) do
-            (loop for cell-string in (split-string current-line)
-                  for cell-value = (string-to-number cell-string)
-                  for j = 0 then (+ j 1) do
-            (if (< j size)
-                (g/matrix-setf g/A i j cell-value)
-              (aset g/b i cell-value)))))))
+    (let ((size (string-to-number (g/fetch-line))))
+      (if (= size  0)
+          (progn
+            (setf g/size 0)
+            (setf g/A nil)
+            (setf g/b nil))
+        (progn
+          (setf g/size size)        
+          (setf g/A (g/make-matrix-2d size size 0))
+          (setf g/b (make-vector size 0))
+          (loop for current-line in (g/fetch-lines (g/num-lines))
+                for i = 0 then (+ i 1) do
+                (loop for cell-string in (split-string current-line)
+                      for cell-value = (string-to-number cell-string)
+                      for j = 0 then (+ j 1) do
+                      (if (< j size)
+                          (g/matrix-setf g/A i j cell-value)
+                        (aset g/b i cell-value)))))))))
 
 (defun g/first-unused(ls)
   "Position of first unset element in vector."
@@ -137,10 +147,8 @@
         (pcol (g/position-column pivot-pos))
         (retval ""))
 
-    (defun pivot-cellp(i j)
-      (and (equal prow  i) (equal pcol j))) 
-
     (defun cell-format (i j)
+      (defun pivot-cellp(i j) (and (equal prow  i) (equal pcol j))) 
       (format
        (if (pivot-cellp i j) "[%-4.2f]" " %-4.2f ") (g/A-at i j)))
 
@@ -153,13 +161,14 @@
           (loop for j from 0 below (g/ncols) do 
                 (g/concatf retval (cell-format i j)))
           (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
-
     (g/concatf retval (vline (g/ncols)))
     
     retval))
 
-(defun g/gausian(input-file)
-  (g/read-equations input-file)
+(defun g/gausian(A b)
+  (setf g/A A)
+  (setf g/b b)
+  (setf g/size (g/nrows))
   (if (= g/size 0)
       []
       (loop
@@ -167,21 +176,27 @@
        with used-rows = (make-vector size nil)
        with used-cols = (make-vector size nil)  
        for i from 0 below size
-            for pivot-position = (g/select-pivot used-rows used-cols)
-            for pivot-row = (g/position-row pivot-position)
-            for pivot-col = (g/position-column pivot-position)
-            while (not (= (g/A-at pivot-row pivot-col) 0))
-            do
-            (g/process-pivot pivot-position)
-            (if g/debug
-                (message (g/print-matrix pivot-position)))
-            (aset used-rows pivot-row t)
-            (aset used-cols pivot-col t)
-            finally (return  g/b))))
+       for pivot-position = (g/select-pivot used-rows used-cols)
+       for pivot-row = (g/position-row pivot-position)
+       for pivot-col = (g/position-column pivot-position)
+       while (not (= (g/A-at pivot-row pivot-col) 0))
+       do
+       (g/process-pivot pivot-position)
+       (if g/debug
+           (message (g/print-matrix pivot-position)))
+       (aset used-rows pivot-row t)
+       (aset used-cols pivot-col t)
+       finally (return  g/b))))
+
+(defun g/gausian-file(input-file)
+  (g/read-equations input-file)
+  (g/gausian g/A g/b))
 
 (progn
-  (assert (equal (g/gausian "tests/01") []))
-  (assert (equal (g/gausian "tests/02") [1.0 5.0 4.0 3.0]))
-  (assert (equal (g/gausian "tests/03") [3.0 0.0]))
-  (assert (equal (g/gausian "tests/04") [0.19999999999999996 0.39999999999999997]))
-  (assert (equal (g/gausian "tests/05") [1.0 3.0 5.0 0.0])))
+  (assert (equal (g/gausian-file "tests/01") []))
+  (assert (equal (g/gausian-file "tests/02") [1.0 5.0 4.0 3.0]))
+  (assert (equal (g/gausian-file "tests/03") [3.0 0.0]))
+  (assert (equal (g/gausian-file "tests/04") [0.19999999999999996 0.39999999999999997]))
+  (assert (equal (g/gausian-file "tests/05") [1.0 3.0 5.0 0.0])))
+
+(provide 'gaussian)
