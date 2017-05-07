@@ -11,26 +11,13 @@
   (with-temp-buffer
     (insert-file-contents input-file t)
     (goto-char 0)
-    (let*((line1 (split-string (g/fetch-line) " " t))
-          (m (string-to-number (car line1)))
-          (n (string-to-number (cadr line1))))
-      (setf s/A (g/make-matrix-2d m n 0))
-      (setf s/b (make-vector m 0))
-      (setf s/objective (make-vector n 0))
-      (loop for line in (g/fetch-lines m)
-            for i = 0 then (+ i 1) do
-            (loop for cell in (split-string line " ")
-                  for cell-value = (string-to-number cell)
-                  for j = 0 then (+ j 1) do
-                  (g/matrix-setf s/A i j cell-value)))
-      (loop for cell in (split-string (g/fetch-line) " ")
-            for cell-value = (string-to-number cell)
-            for i = 0 then (+ i 1) do
-            (aset s/b i cell-value))
-      (loop for cell in (split-string (g/fetch-line) " ")
-            for cell-value = (string-to-number cell)
-            for i = 0 then (+ i 1) do
-            (aset s/objective i cell-value))
-      )))
+    (let*((sizes (g/fetch-num-vector))
+          (m (aref sizes 0))
+          (n (aref sizes 1)))
+      (setf s/A (make-vector m nil))
+      (loop for i from 0 below m do
+            (aset s/A i (g/fetch-num-vector)))
+      (setf s/b (g/fetch-num-vector))
+      (setf s/objective (g/fetch-num-vector)))))
 
-(s/read-input "tests/01")
+(s/read-input "tests/02")

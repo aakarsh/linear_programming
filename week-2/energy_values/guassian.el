@@ -19,6 +19,18 @@
   `(g/A-at (g/position-row ,pos)
            (g/position-column ,pos)))
 
+(defun g/vector-list(ls)
+  (loop with v = (make-vector (length ls) 0)
+        for l in ls 
+        for i = 0 then (+ i 1)
+        do (aset v i l)
+        finally (return v)))
+
+(defun g/fetch-num-vector()
+  (g/vector-list
+   (mapcar 'string-to-number
+           (split-string (g/fetch-line) " "))))
+
 (defun g/nrows()
   (length g/A))
 
