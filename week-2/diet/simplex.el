@@ -1,19 +1,23 @@
 (require 'cl)
 (require 'gaussian)
 
-(defvar s/debug 1)
+;; Not taking the tabaleau approach for now, instead just using
+;; CLRS-pg 795
 
+(defvar s/debug 1)
 (defvar s/A nil "Coefficient matrix for Ax \leq b")
 (defvar s/b nil "Bounds on the inequalities ")
 (defvar s/objective nil "Objective function to maximize")
 (defvar m 0 "Number of variables in Ax \leq b")
 (defvar n 0 "Number of inequalities in Ax \leq b" )
+(defvar s/N (make-bool-vector m nil) "Used to maintain a set non-basic variables")
+(defvar s/B (make-bool-vector m nil) "Used to represent a set of basic variables")
 
-
-(defun s/pivot(entering leaving)
+(defun s/pivot(entering leaving basis-set non-basis-set)
   " Pivot a slack form matrix for simplex based optimization
   `entering` - index of element becoming basic
   `leaving`  - index of element leaving the basic element"
+
   ;; 1. Scale the leaving row of the slack form matrix by the leaving
   ;;    entry form
   (loop
@@ -39,5 +43,6 @@
       (setf s/objective (g/fetch-line-as-numbers)))))
 
 (defvar s/test-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-2/diet")
+
 (ert-deftest s/test-02()
   (should (s/read-input (concat s/test-dir "/tests/02")))

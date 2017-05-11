@@ -9,6 +9,10 @@
 
 (defstruct g/position row column)
 
+(defun g/make-table(rows cols cell-value)
+  (loop repeat rows vconcat
+        (vector (loop repeat cols vconcat (make-vector 1 cell-value)))))
+
 (defun g/table-nrows(table)
   (length table))
 
@@ -37,16 +41,9 @@
    (mapcar 'string-to-number
            (split-string (g/fetch-line) " "))))
 
-(defun g/current-line()
-  (buffer-substring-no-properties
-   (line-beginning-position) (line-end-position)))
-
 (defun g/num-lines()
   (count-lines (point-min) (point-max)))
 
-(defun g/make-table(rows cols cell-value)
-  (loop repeat rows vconcat
-        (vector (loop repeat cols vconcat (make-vector 1 cell-value)))))
 
 (defmacro g/swapf(r1 r2)
   `(let ((temp nil))
@@ -205,7 +202,6 @@
 (defun g/gausian-file(input-file)
   (g/read-equations input-file)
   (g/gausian g/A g/b))
-
 
 (ert-deftest g/test-01()
   (should (equal (g/gausian-file "tests/01") [])))
