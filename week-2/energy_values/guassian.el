@@ -9,15 +9,21 @@
 
 (defstruct g/position row column)
 
-(defmacro g/A-at (i j)
-  `(aref (aref g/A ,i) ,j))
+(defun g/table-nrows(table)
+  (length table))
 
-(defmacro g/matrix-setf(m i j value)
+(defun g/table-ncols(table)
+  (length (aref table 0)))
+
+(defmacro g/table-at (table i j)
+  `(aref (aref ,table ,i) ,j))
+
+(defmacro g/table-setf(m i j value)
   `(setf (aref (aref ,m ,i ) ,j)  ,value))
 
-(defmacro g/A-at-position(pos)
-  `(g/A-at (g/position-row ,pos)
-           (g/position-column ,pos)))
+(defmacro g/table-at-position(table pos)
+  `(g/table-at ,table  (g/position-row ,pos)
+               (g/position-column ,pos)))
 
 (defun g/vector-list(ls)
   (loop with v = (make-vector (length ls) 0)
@@ -26,16 +32,10 @@
         do (aset v i l)
         finally (return v)))
 
-(defun g/fetch-num-vector()
+(defun g/fetch-line-as-numbers()
   (g/vector-list
    (mapcar 'string-to-number
            (split-string (g/fetch-line) " "))))
-
-(defun g/nrows()
-  (length g/A))
-
-(defun g/ncols()
-  (length (aref g/A 0)))
 
 (defun g/current-line()
   (buffer-substring-no-properties
@@ -44,7 +44,7 @@
 (defun g/num-lines()
   (count-lines (point-min) (point-max)))
 
-(defun g/make-matrix-2d(rows cols cell-value)
+(defun g/make-table(rows cols cell-value)
   (loop repeat rows vconcat
         (vector (loop repeat cols vconcat (make-vector 1 cell-value)))))
 
@@ -58,8 +58,8 @@
   (g/swapf (aref v p1) (aref v p2)))
 
 (defun g/swap-rows(r1 r2)
-  (loop for c from 0 below (g/ncols) do
-        (g/swapf (g/A-at r1 c) (g/A-at r2 c)))
+  (loop for c from 0 below (g/table-ncols g/A) do
+        (g/swapf (g/table-at g/A r1 c) (g/table-at g/A r2 c)))
   (g/vector-swap g/b r1 r2))
 
 (defmacro g/divf(place value)
@@ -99,7 +99,7 @@
             (setf g/b nil))
         (progn
           (setf g/size size)        
-          (setf g/A (g/make-matrix-2d size size 0))
+          (setf g/A (g/make-table size size 0))
           (setf g/b (make-vector size 0))
           (loop for current-line in (g/fetch-lines (g/num-lines))
                 for i = 0 then (+ i 1) do
@@ -107,7 +107,7 @@
                       for cell-value = (string-to-number cell-string)
                       for j = 0 then (+ j 1) do
                       (if (< j size)
-                          (g/matrix-setf g/A i j cell-value)
+                          (g/table-setf g/A i j cell-value)
                         (aset g/b i cell-value)))))))))
 
 (defun g/first-unused(ls)
@@ -122,80 +122,82 @@
           (row (g/position-row pivot))
           (col (g/position-column pivot))
           (switch_row row))
-    (if (= 0 (g/A-at-position pivot))
+    (if (= 0 (g/table-at-position g/A pivot))
         (progn
-          (loop for i from row below (g/nrows)                
-                while (and (< switch_row (g/nrows))
-                           (= 0 (g/A-at switch_row col)))
+          (loop for i from row below (g/table-nrows g/A)                
+                while (and (< switch_row (g/table-nrows g/A))
+                           (= 0 (g/table-at g/A switch_row col)))
                 count t into switch_row)          
-          (if (< switch_row (g/nrows))
+          (if (< switch_row (g/table-nrows g/A))
               (g/swap-rows row switch_row))))
     pivot))
 
 (defun g/process-pivot(pivot-pos)
-  (let* ((pivot-value (* 1.0 (g/A-at-position pivot-pos)))
+  (let* ((pivot-value (* 1.0 (g/table-at-position g/A pivot-pos)))
         (col (g/position-column pivot-pos))
         (row (g/position-row pivot-pos)))
 
     ;; scale row by pivot value
-    (loop for i from 0 below (g/ncols) do
-          (g/divf (g/A-at row i) pivot-value))
+    (loop for i from 0 below (g/table-ncols g/A) do
+          (g/divf (g/table-at g/A row i) pivot-value))
 
     (g/divf (aref g/b row) pivot-value)
     ;; pivot row  1 at pivot poistion from scaling
     ;; use it to eliminate all values in pivot column.
 
-    (loop for r from 0 below (g/nrows)
-          for scale = (* -1.0 (g/A-at r col)) do
+    (loop for r from 0 below (g/table-nrows g/A)
+          for scale = (* -1.0 (g/table-at g/A r col)) do
      (unless (equal r row)
        ;; to eliminated A(r,col) entry we scale the pivot row
        ;; by -A(r,col) then added it
-         (loop for c from 0 below (g/ncols) do
-               (incf (g/A-at r c) (* scale (g/A-at row c))))
+         (loop for c from 0 below (g/table-ncols g/A) do
+               (incf (g/table-at g/A r c) (* scale (g/table-at g/A row c))))
          (incf (aref g/b r) (* scale (aref g/b row)))))))
 
-(defun g/print-matrix (pivot-pos)
-  (let ((prow (g/position-row pivot-pos))
-        (pcol (g/position-column pivot-pos))
-        (retval ""))
+(defun g/print-table (table &optional pivot-pos)
+    (if (not pivot-pos)
+        (setf pivot-pos (make-g/position :row 0 :column 0)))
+    (let ((prow (g/position-row pivot-pos))
+          (pcol (g/position-column pivot-pos))
+          (retval ""))
 
-    (defun cell-format (i j)
-      (defun pivot-cellp(i j) (and (equal prow  i) (equal pcol j))) 
-      (format
-       (if (pivot-cellp i j) "[%-4.2f]" " %-4.2f ") (g/A-at i j)))
+      (defun cell-format (i j)
+        (defun pivot-cellp(i j) (and (equal prow  i) (equal pcol j))) 
+        (format
+         (if (pivot-cellp i j) "[%-4.2f]" " %-4.2f ") (g/table-at g/A i j)))
 
-    (defun vline(num)
-      (concat (loop repeat num concat "--------") "\n"))
+      (defun vline(num)
+        (concat (loop repeat num concat "--------") "\n"))
 
-    (g/concatf retval (vline (g/ncols)))
+      (g/concatf retval (vline (g/table-ncols g/A)))
 
-    (loop for i from 0 below (g/nrows) do
-          (loop for j from 0 below (g/ncols) do 
-                (g/concatf retval (cell-format i j)))
-          (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
-    (g/concatf retval (vline (g/ncols)))
-    
-    retval))
+      (loop for i from 0 below (g/table-nrows g/A) do
+            (loop for j from 0 below (g/table-ncols g/A) do 
+                  (g/concatf retval (cell-format i j)))
+            (g/concatf retval (format  "|%-4.2f\n" (aref g/b i))))
+      (g/concatf retval (vline (g/table-ncols g/A)))
+      
+      retval))
 
 (defun g/gausian(A b)
   (setf g/A A)
   (setf g/b b)
-  (setf g/size (g/nrows))
+  (setf g/size (g/table-nrows g/A))
   (if (= g/size 0)
       []
       (loop
-       with size = (g/ncols)
+       with size = (g/table-ncols g/A)
        with used-rows = (make-vector size nil)
        with used-cols = (make-vector size nil)  
        for i from 0 below size
        for pivot-position = (g/select-pivot used-rows used-cols)
        for pivot-row = (g/position-row pivot-position)
        for pivot-col = (g/position-column pivot-position)
-       while (not (= (g/A-at pivot-row pivot-col) 0))
+       while (not (= (g/table-at g/A pivot-row pivot-col) 0))
        do
        (g/process-pivot pivot-position)
        (if g/debug
-           (message (g/print-matrix pivot-position)))
+           (message (g/print-table  g/A pivot-position)))
        (aset used-rows pivot-row t)
        (aset used-cols pivot-col t)
        finally (return  g/b))))
@@ -204,11 +206,23 @@
   (g/read-equations input-file)
   (g/gausian g/A g/b))
 
-(progn
-  (assert (equal (g/gausian-file "tests/01") []))
-  (assert (equal (g/gausian-file "tests/02") [1.0 5.0 4.0 3.0]))
-  (assert (equal (g/gausian-file "tests/03") [3.0 0.0]))
-  (assert (equal (g/gausian-file "tests/04") [0.19999999999999996 0.39999999999999997]))
+
+(ert-deftest g/test-01()
+  (should (equal (g/gausian-file "tests/01") [])))
+
+(ert-deftest g/test-02()
+  (should (equal (g/gausian-file "tests/02") [1.0 5.0 4.0 3.0])))
+
+(ert-deftest g/test-03()
+  (should (equal (g/gausian-file "tests/03") [3.0 0.0])))
+
+(ert-deftest g/test-04()
+  (should (equal (g/gausian-file "tests/04") [0.19999999999999996 0.39999999999999997])))
+
+(ert-deftest g/test-05()
   (assert (equal (g/gausian-file "tests/05") [1.0 3.0 5.0 0.0])))
 
 (provide 'gaussian)
+
+(ert "g/test-*")
+
