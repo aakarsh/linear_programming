@@ -14,7 +14,6 @@
   " Pivot a slack form matrix for simplex based optimization
   `entering` - index of element becoming basic
   `leaving`  - index of element leaving the basic element"
-
   ;; 1. Scale the leaving row of the slack form matrix by the leaving
   ;;    entry form
   (loop
@@ -24,9 +23,6 @@
    (if s/debug
        (message "pivot-entry:%d b-entering:%d" pivot-entry b-entering))
    ))
-
-;;(s/pivot 0 1)
-;;(g/print-table (g/make-table  10 10 0))
 
 (defun s/read-input(input-file)
   "Read in simplex from file."
@@ -42,8 +38,6 @@
       (setf s/b (g/fetch-line-as-numbers))
       (setf s/objective (g/fetch-line-as-numbers)))))
 
+(defvar s/test-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-2/diet")
 (ert-deftest s/test-02()
-  (should (s/read-input "tests/02")))
-
-(ert "s/test-*")
-
+  (should (s/read-input (concat s/test-dir "/tests/02")))
