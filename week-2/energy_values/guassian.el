@@ -29,6 +29,10 @@
   `(g/table-at ,table  (g/position-row ,pos)
                (g/position-column ,pos)))
 
+(defun g/table-swap-rows(table r1 r2)
+  (loop for c from 0 below (g/table-ncols table) do
+        (g/swapf (g/table-at table r1 c) (g/table-at table r2 c))))
+
 (defun g/vector-list(ls)
   (loop with v = (make-vector (length ls) 0)
         for l in ls 
@@ -44,7 +48,6 @@
 (defun g/num-lines()
   (count-lines (point-min) (point-max)))
 
-
 (defmacro g/swapf(r1 r2)
   `(let ((temp nil))
      (setf  temp ,r2)
@@ -55,8 +58,7 @@
   (g/swapf (aref v p1) (aref v p2)))
 
 (defun g/swap-rows(r1 r2)
-  (loop for c from 0 below (g/table-ncols g/A) do
-        (g/swapf (g/table-at g/A r1 c) (g/table-at g/A r2 c)))
+  (g/table-swap-rows g/A r1 r2)
   (g/vector-swap g/b r1 r2))
 
 (defmacro g/divf(place value)
@@ -220,5 +222,13 @@
 
 (provide 'gaussian)
 
-(ert "g/test-*")
+
+
+
+
+
+
+
+
+
 
