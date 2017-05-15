@@ -33,12 +33,23 @@
   (loop for c from 0 below (g/table-ncols table) do
         (g/swapf (g/table-at table r1 c) (g/table-at table r2 c))))
 
+(defun g/make-vector(length constructor)
+  (let ((retval (make-vector length nil)))
+    (loop for i from 0 below length do
+          (aset  retval i (funcall constructor i)))
+    retval))
+
 (defun g/vector-list(ls)
   (loop with v = (make-vector (length ls) 0)
         for l in ls 
         for i = 0 then (+ i 1)
         do (aset v i l)
         finally (return v)))
+
+(defun g/line-to-numbers(line)
+  (g/vector-list
+   (mapcar 'string-to-number
+           (split-string line " "))))
 
 (defun g/fetch-line-as-numbers()
   (g/vector-list
@@ -74,16 +85,28 @@
     (goto-char (line-beginning-position))
     (setf reg-begin (point)) 
     (forward-line n)
-    (goto-char (line-beginning-position))
-    (if (equal (point) reg-begin)
-        (setf reg-end (line-end-position))
-      (setf reg-end (point))))
+    (goto-char (line-end-position))
+    (setf reg-end (point))
+    ;; AN - 5/14
+    ;;    (if (equal (point) reg-begin)
+    ;;        (setf reg-end (line-end-position))
+    ;;      (setf reg-end (point))
+    )
   (forward-line n) ;; change buffer state so curser is n-lines ahead
   (let ((region (buffer-substring-no-properties reg-begin reg-end)))
     (split-string region "\n" t))))
 
 (defun g/fetch-line()
   (car (g/fetch-lines 1)))
+
+(defun g/map-over-file(input-file f)
+  (with-temp-buffer
+    (insert-file-contents input-file t)
+    (goto-char 0)
+    (loop with num-lines = (g/num-lines)
+          for current-line in (g/fetch-lines num-lines)
+          for i = 0 then (+ i 1) do
+          (funcall  f i current-line))))
 
 (defun g/read-equations(input-file)
   "Read the equation from input file into g/A and g/b"
