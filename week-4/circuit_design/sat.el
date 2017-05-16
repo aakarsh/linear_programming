@@ -143,13 +143,13 @@
 (defun sat/parse-file(input-file)
   (g/map-over-file input-file 'sat/file-parseline))
 
-(defun sat/foo()
+(defun sat/check-satisfiable(input-file)
   (sat/clear)
-  (sat/parse-file "tests/01")
+  (sat/parse-file input-file)
   (sat/build-constraint-graph)
   (sat/find-strong-components sat/constraint-graph))
 
-;;(sat/foo)
 
+(sat/check-satisfiable "tests/01")
 
 (provide 'sat)
