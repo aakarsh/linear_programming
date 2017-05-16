@@ -1,10 +1,17 @@
 (require 'g)
+(require 'an-alias )
+(require 'cl-lib)
 
 (defvar sat/num-clauses 0)
 (defvar sat/num-variables 0)
 (defvar sat/clauses nil)
 
-(defstruct sat/node number component visited start-time finish-time  )
+(defstruct sat/node
+  number
+  component
+  visited
+  start-time
+  finish-time)
 
 ;; [-x x -y x -z z ]
 ;; Constraint Graph where:
@@ -22,7 +29,7 @@
 ;;                      (- (abs second ) 1)
 ;;                    second)
 ;; even odd maybe 0 - -1
-;; 0 -> -1 , 1 -> 1 , 2 -> -2 , 3 -> 2 , 4 -> -3, 
+;; 0 -> -1 , 1 -> 1 , 2 -> -2 , 3 -> 2 , 4 -> -3,
 (defun sat/node-index(number)
   (if (< number 0)
       (- (* 2 (abs number)) 2)
@@ -33,8 +40,8 @@
           for first  = (aref clause 0)
           for second = (aref clause 1)
           do
-          (g/table-setf graph (sat/node-index (* -1 first)) (sat/node-index second) t)
-          (g/table-setf graph (sat/node-index (* -1 second)) (sat/node-index first) t)))
+          (table/setf graph (sat/node-index (* -1 first)) (sat/node-index second) t)
+          (table/setf graph (sat/node-index (* -1 second)) (sat/node-index first) t)))
 
 (defun sat/build-constraint-graph()
   (setf sat/nodes
@@ -47,39 +54,50 @@
 (defun sat/reverse-graph(graph)
   (loop
    with size = (* 2 sat/num-variables)
-   with new-graph = (g/make-table size size nil)
+   with new-graph = (table/make size size nil)
    finally (return new-graph)
-   for row from 0 below (g/table-nrows  graph) do
-   (loop for col below  (g/table-ncols graph) do
-         (if (g/table-at graph row col)
-             (g/table-setf new-graph col row t)))))
+   for row from 0 below (table/nrows  graph) do
+   (loop for col below  (table/ncols graph) do
+         (if (table/at graph row col)
+             (table/setf new-graph col row t)))))
 
-;; keep track of time during dfs-visiting 
-(defvar sat/dfs-time 0) 
 
-;; TODO: Need to Implement Kosaraju's algorithm.
-(defun sat/dfs-visit(graph node-num component )
-  (incf sat/dfs-time)
-  (setf (sat/node-start-time (aref sat/nodes  node-num)) sat/dfs-time)
-  (loop for neighbour-p across  (aref graph node-num)
-        for j = 0  then (+ j 1)
-        for node =  (aref sat/nodes j)
-        with initial-node = (aref sat/nodes node-num) 
-        finally
-         (progn
-           (message "Marking Visited : %d" j)
-           (setf (sat/node-visited initial-node) 'visited)           
-           (setf (sat/node-finish-time initial-node) sat/dfs-time)
-           (setf (sat/node-component initial-node) component))
-        do
-        (if (and neighbour-p
-                 (not (equal (sat/node-visited node) 'visited)))
-            (progn
-              (message "Start Visit :%d" j)
-              (setf (sat/node-visited node) 'visiting)
-              (setf (sat/node-component node) component)
-              (sat/dfs-visit graph j component )
-              (setf (sat/node-visited node) 'visited)))))
+(cl-defun sat/dfs-visit(graph nodes node  &key (pre-visit nil) (post-visit nil))
+  
+  "Runs dfs on a `graph` represented by and adjaceny matrix of
+   vectors, `nodes` is a of nodes containing auxiliary
+   information about graph nodes. `node` is the node to
+   visit. `pre-vist` and `post-visit` are optional key word
+   callbacks called before and after visiting `node`. "
+  
+  (let ((node-num (sat/node-number node)))
+    (if pre-visit
+        (progn 
+          (funcall pre-visit graph nodes node)))    
+;;    (incf sat/dfs-time)
+    (setf (sat/node-start-time (aref nodes  node-num)) sat/dfs-time)
+    (loop for neighbour-p across  (aref graph node-num)
+          for j = 0  then (+ j 1)
+          for node =  (aref nodes j)
+          with initial-node = (aref nodes node-num)
+          finally
+          (progn
+            (message "Marking Visited : %d" j)
+            (setf (sat/node-visited initial-node) 'visited)
+            (setf (sat/node-finish-time initial-node) sat/dfs-time)
+            (if post-visit
+                (funcall post-visit graph nodes initial-node)))          
+          do
+          (if (and neighbour-p
+                   (not (equal (sat/node-visited node) 'visited)))
+              (progn
+                (message "Start Visit :%d" j)                
+                (setf (sat/node-visited node) 'visiting)
+                (sat/dfs-visit graph nodes node
+                               :post-visit post-visit
+                               :pre-visit  pre-visit)
+                (setf (sat/node-visited node) 'visited))))))
+
 
 (defun sat/nodes-by-decreasing-finish-time(nodes)
   "Returns node by decreasing order of finish times."
@@ -96,34 +114,106 @@
                     (<  (sat/node-finish-time node1) (sat/node-finish-time node2))))))
     node-order))
 
+(defun sat/make-component-graph(nodes graph num-components)
+  (let ((component-graph (table/make num-components num-components nil)))
+    (loop for i from 0 below (table/nrows graph )
+          for i-cmp =  (sat/node-component (aref nodes i))
+          do 
+          (loop for j from 0 below (table/ncols graph)
+                for j-cmp =  (sat/node-component (aref nodes j))
+                do
+                (if (and  (table/at graph i j)   (not (eq i-cmp j-cmp)))
+                    (table/setf component-graph
+                                ;; change component number to index
+                                i-cmp j-cmp
+                                t))))
+    component-graph))
+
 (defun sat/find-strong-components(graph)
-  (setf sat/dfs-time 0)
-  
-  ;; Compute the finish times for all nodes 
-  (loop
-   for i from 0 below (g/table-nrows graph)
-   for node = (aref sat/nodes i)
-   do
-   (if (not (sat/node-visited node))
-       (sat/dfs-visit graph i -1)))
-  
-  ;; Clear visiting information
-  (loop for node across sat/nodes do
-        (setf (sat/node-visited node) nil))
-  
-  (setf sat/dfs-time 0)
-  
-  ;; Go through reverse graph  
-  (loop
-   for v across (sat/nodes-by-decreasing-finish-time sat/nodes)
-   for node = (aref sat/nodes v)
-   with scc-number  = 0
-   do 
-   (if (not (sat/node-visited node))
-       (progn 
-         (incf scc-number) 
-         (sat/dfs-visit (sat/reverse-graph graph) v scc-number )))))
-        
+  (let ((num-components 0)
+        (component-number 0))
+    ;; Compute the finish times for all nodes
+    (loop
+     for i from 0 below (table/nrows graph)
+     for node = (aref sat/nodes i)
+     with dfs-time = 0
+     do
+     (if (not (sat/node-visited node))
+         (sat/dfs-visit graph sat/nodes node
+                        :pre-visit (lambda (graph nodes node)
+                                     (incf dfs-time)
+                                     (setf (sat/node-start-time node) dfs-time))
+                        :post-visit (lambda (graph nodes node)
+                                      (setf (sat/node-finish-time node) dfs-time)))))
+    
+    
+    ;; Clear visiting information
+    (loop for node across sat/nodes do
+          (setf (sat/node-visited node) nil))
+    
+    
+    ;; Go through reverse graph, mark out the strongly connected components.
+    (loop
+     for v across (sat/nodes-by-decreasing-finish-time sat/nodes)
+     for node = (aref sat/nodes v)
+     with dfs-time = 0
+     do
+     (if (not (sat/node-visited node))
+         (progn
+           (sat/dfs-visit (sat/reverse-graph graph) sat/nodes node
+                          :pre-visit (lambda (graph nodes node)
+                                       (incf dfs-time)
+                                       (setf (sat/node-start-time node) dfs-time))
+                          
+                          :post-visit (lambda (graph nodes node)
+                                        (setf (sat/node-finish-time node) dfs-time)
+                                        (setf (sat/node-component node) component-number)))
+           
+           (incf component-number))))
+    
+    (setf num-components (+ 1 component-number))
+    
+    (let ((component-graph nil)
+          (nodes-by-component (make-vector num-components nil))
+          (node-finish-order '())          
+          ;; After dfs visit will contain the reverse-topological
+          ;; ording strongly connected component vertices based on
+          ;; when they finished
+          
+          (component-nodes
+           (an/vector-list 
+            (loop for i from 0 below num-components
+                  collect
+                  (make-sat/node :number i :component nil :visited nil :start-time -1 :finish-time -1)))))
+
+      (setf component-graph (sat/make-component-graph sat/nodes graph num-components))      
+      
+
+      ;; determine compnent ordering 
+      (loop for node across component-nodes
+            do
+            (if (eq (sat/node-visited node ) nil)                
+                (sat/dfs-visit component-graph component-nodes node                               
+                               :post-visit
+                               (lambda (graph nodes node)
+                                 (setf node-finish-order (cons node node-finish-order))))))
+
+      ;; Go in Reverse Topological order assigning the nodes in the component
+      ;; for all literals that are in
+      ;; maybe we  need some sort of map from component number to nodes
+      (loop for nodes in node-finish-order do
+            ;; if literals of the components are not assigned then give them a value of  1
+            ;; Their negations will be assigned the value 0
+
+            (loop for node in nodes do
+                  ;; for each node we need to assign the correspoding clause a value of  
+                  ;; if it has not already been assigned a
+                  ;; TODO : how do we go backwards from node the clause ??
+                  (progn)
+                  ))
+      (message "%s" node-finish-order))))
+
+
 (defun sat/clear()
   (setf sat/num-clauses 0)
   (setf sat/num-variables 0)
@@ -138,17 +228,16 @@
       (setf sat/num-clauses (aref nums 0))
       (setf sat/num-variables (aref nums 1))
       (setf sat/constraint-graph
-            (g/make-table (* 2 sat/num-variables)  (* 2 sat/num-variables) nil)))))
+            (table/make (* 2 sat/num-variables)  (* 2 sat/num-variables) nil)))))
 
 (defun sat/parse-file(input-file)
-  (g/map-over-file input-file 'sat/file-parseline))
+  (an/file:map-over-file input-file 'sat/file-parseline))
 
 (defun sat/check-satisfiable(input-file)
   (sat/clear)
   (sat/parse-file input-file)
   (sat/build-constraint-graph)
   (sat/find-strong-components sat/constraint-graph))
-
 
 (sat/check-satisfiable "tests/01")
 
