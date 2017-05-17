@@ -29,11 +29,20 @@
 (defun sat/node-index(literal)
   "Maps a literal integer value x to a node-number in the
 constraint graph general scheme for example literal l will be
-mapped as : 
+mapped as :
 -l -> (2*l -2)
- l -> (2*l -1)"  
+ l -> (2*l -1)"
   (let ((x (* 2 (abs literal))))
     (if (< literal 0) (- x 2)  (- x 1))))
+
+;; [ 0 -> -1 , 1 -> 1 , 2 -> -2 , 3 -> 2 , 4 -> -3, 5 -> 3 ]
+;;
+(defun sat/half (x) (/ x 2))
+(defun sat/literal (node-index)
+  "Convert a literal back into a node-index. `node-index' index. This is actactly the inverse "
+  (sat/half  (if (evenp node-index) ;; negative literal
+          (* -1 (+ node-index 2 ))
+        (+ node-index 1))))
 
 (defun sat/make-constraint-graph(num-variables clauses)
   "Takes number of literal and list of clauses and builds a
@@ -70,12 +79,11 @@ mapped as :
              (table/setf new-graph col row t)))))
 
 (cl-defun sat/dfs-visit(graph nodes node  &key (pre-visit nil) (post-visit nil))
-
-  "Runs dfs on a `graph` represented by and adjaceny matrix of
-   vectors, `nodes` is a of nodes containing auxiliary
-   information about graph nodes. `node` is the node to
-   visit. `pre-vist` and `post-visit` are optional key word
-   callbacks called before and after visiting `node`. "
+  "Runs dfs on a `graph' represented by and adjaceny matrix of
+vectors, `nodes' is a of nodes containing auxiliary
+information about graph nodes. `node' is the node to
+visit. `pre-vist' and `post-visit' are optional key word
+callbacks called before and after visiting `node`. "
 
   (let ((node-num (sat/node-number node)))
     (if pre-visit
@@ -186,32 +194,42 @@ mapped as :
             for component-number = (sat/node-component node) do
             (push node (aref nodes-by-component component-number)))
 
-
       ;; determine component ordering
-      (loop for node across component-nodes
-            do
+      (loop for node across component-nodes do
             (if (eq (sat/node-visited node ) nil)
                 (sat/dfs-visit component-graph component-nodes node
-                               :post-visit
-                               (lambda (graph nodes node)
-                                 (push node node-finish-order)))))
+                               :post-visit (lambda (graph nodes node) (push node node-finish-order)))))
 
       ;; Go in Reverse Topological order assigning the nodes in the
       ;; component for all literals that are in maybe we need some
       ;; sort of map from component number to nodes
+      (let ((assignment  (make-vector sat/num-variables nil)))        
+        (loop for component across nodes-by-component do
+              (loop for node in component
+                    for literal = (sat/literal (sat/node-number node))
+                    for idx = (-  (abs literal ) 1)
+                    do
+                    (when (not (aref assignment idx))
+                        (if (< literal 0) 
+                            (aset assignment idx 0)
+                          (aset assignment idx 1)))
+                  
+                    ;; map node number back into the literal or its negation
+                    ;; use that to decide to give the assigment 0 or 1
+                    ;; if
+                    ;; (aset assignment  )
+                    ))
+        
+        assignment)
+      
+      ;; if literals of the components are not assigned then
+      ;; give them a value of 1 their negations will be assigned
+      ;; the value 0 for each node we need to assign the
+      ;; correspoding clause a value of if it has not already
+      ;; been assigned a TODO : how do we go backwards from node
+      ;; the clause ??
+      )))
 
-      (loop for nodes in node-finish-order do
-
-            ;; if literals of the components are not assigned then
-            ;; give them a value of 1 their negations will be assigned
-            ;; the value 0 for each node we need to assign the
-            ;; correspoding clause a value of if it has not already
-            ;; been assigned a TODO : how do we go backwards from node
-            ;; the clause ??
-            (progn)
-
-            )
-      (message "%s" node-finish-order))))
 
 
 (defun sat/clear()
@@ -227,7 +245,6 @@ mapped as :
         (push nums sat/clauses)
       (setf sat/num-clauses (aref nums 0))
       (setf sat/num-variables (aref nums 1)))))
-
 
 (defun sat/parse-file(input-file)
   (an/file:map-over-file input-file 'sat/file-parseline))
