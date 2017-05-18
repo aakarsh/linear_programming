@@ -140,95 +140,115 @@ callbacks called before and after visiting `node`. "
                                 t))))
     component-graph))
 
-(defun sat/find-strong-components(graph)
+(defun sat/find-components(graph nodes)
+  (let ((num-components 0)
+        (component-number 0)
+        (nodes-by-finish-time ()))    
+    
+    ;; Compute the finish times for all nodes
+    (loop for i from 0 below (table/nrows graph)
+          for node = (aref nodes i)
+          with dfs-time = 0 do
+          (if (not (sat/node-visited node))
+              (sat/dfs-visit graph nodes node
+                             :pre-visit (lambda (graph nodes node)
+                                          (incf dfs-time)
+                                          (setf (sat/node-start-time node) dfs-time))
+                             :post-visit (lambda (graph nodes node)
+                                           (push node nodes-by-finish-time)
+                                           (setf (sat/node-finish-time node) dfs-time)))))
+    
+  ;; Clear visiting information
+    (loop for node across nodes do
+          (setf (sat/node-visited node) nil))
+    
+    (loop
+     for v across (sat/nodes-by-decreasing-finish-time nodes)
+     for node = (aref nodes v)
+     with dfs-time = 0 do
+     (if (not (sat/node-visited node))
+         (progn
+           (sat/dfs-visit
+            (sat/reverse-graph graph) nodes node
+            :pre-visit (lambda (graph nodes node)
+                         (incf dfs-time)
+                         (setf (sat/node-start-time node) dfs-time))                               
+            :post-visit (lambda (graph nodes node)
+                          (setf (sat/node-finish-time node) dfs-time)
+                          (setf (sat/node-component node) component-number)))
+           (incf component-number))))
+    component-number))
+
+
+
+(defun sat/find-satisfying-assignment(graph)
   (let ((num-components 0)
         (component-number 0))
-    ;; Compute the finish times for all nodes
-    (loop
-     for i from 0 below (table/nrows graph)
-     for node = (aref sat/nodes i)
-     with dfs-time = 0
-     do
-     (if (not (sat/node-visited node))
-         (sat/dfs-visit graph sat/nodes node
-                        :pre-visit (lambda (graph nodes node)
-                                     (incf dfs-time)
-                                     (setf (sat/node-start-time node) dfs-time))
-                        :post-visit (lambda (graph nodes node)
-                                      (setf (sat/node-finish-time node) dfs-time)))))
-        ;; Clear visiting information
-    (loop for node across sat/nodes do
-          (setf (sat/node-visited node) nil))
+    
+    (setf component-number (sat/find-components graph sat/nodes))
 
     ;; Go through reverse graph, mark out the strongly connected components.
-    (loop for v across (sat/nodes-by-decreasing-finish-time sat/nodes)
-          for node = (aref sat/nodes v)
-          with dfs-time = 0
-          do
-          (if (not (sat/node-visited node))
-              (progn
-                (sat/dfs-visit (sat/reverse-graph graph) sat/nodes node
-                               :pre-visit (lambda (graph nodes node)
-                                            (incf dfs-time)
-                                            (setf (sat/node-start-time node) dfs-time))
 
-                               :post-visit (lambda (graph nodes node)
-                                             (setf (sat/node-finish-time node) dfs-time)
-                                             (setf (sat/node-component node) component-number)))
-
-                (incf component-number))))
-
+    
     (setf num-components (+ 1 component-number))
-
+    
     (let ((nodes-by-component (make-vector num-components nil))
           (node-finish-order '())
           (component-nodes (sat/make-nodes num-components))
           (component-graph (sat/make-component-graph sat/nodes graph num-components)))
-
+      
       ;; After dfs visit will contain the reverse-topological
       ;; ording strongly connected component vertices based on
       ;; when they finished
-
       (loop for node across sat/nodes
             for i = 0 then (+ i 1)
             for component-number = (sat/node-component node) do
             (push node (aref nodes-by-component component-number)))
-
+      
       ;; determine component ordering
       (loop for node across component-nodes do
             (if (eq (sat/node-visited node ) nil)
                 (sat/dfs-visit component-graph component-nodes node
-                               :post-visit (lambda (graph nodes node) (push node node-finish-order)))))
+                               :post-visit
+                               (lambda(graph nodes node)
+                                 (push node node-finish-order)))))
 
-      ;; Go in Reverse Topological order assigning the nodes in the
+      ;; Go in Reverse topological order assigning the nodes in the
       ;; component for all literals that are in maybe we need some
-      ;; sort of map from component number to nodes
-      (let ((assignment  (make-vector sat/num-variables nil)))        
-        (loop for component across nodes-by-component do
-              (loop for node in component
-                    for literal = (sat/literal (sat/node-number node))
-                    for idx = (-  (abs literal ) 1)
-                    do
-                    (when (not (aref assignment idx))
-                        (if (< literal 0) 
-                            (aset assignment idx 0)
-                          (aset assignment idx 1)))
-                  
-                    ;; map node number back into the literal or its negation
-                    ;; use that to decide to give the assigment 0 or 1
-                    ;; if
-                    ;; (aset assignment  )
-                    ))
-        
-        assignment)
-      
-      ;; if literals of the components are not assigned then
-      ;; give them a value of 1 their negations will be assigned
-      ;; the value 0 for each node we need to assign the
-      ;; correspoding clause a value of if it has not already
-      ;; been assigned a TODO : how do we go backwards from node
-      ;; the clause ??
-      )))
+      ;; sort of map from component number to nodes      
+      (sat/compute-assignment nodes-by-component))))
+
+
+(defun sat/compute-assignment (nodes-by-component)
+  "Takes a component graph, traversing it in reverse topological
+   ordering. Assigning all unassigned literals in the components
+   the value 1.  `nodes-by-component' a vector of lists, contains
+   components in their reverse topologial order with all the
+   nodes they contain as"
+  (let ((assignment  (make-vector sat/num-variables nil) ))
+    (loop for component across nodes-by-component do
+          (loop for node in component
+                for literal = (sat/literal (sat/node-number node))
+                for idx = (-  (abs literal ) 1)
+                do
+                (when (not (aref assignment idx))
+                  (if (< literal 0)
+                      (aset assignment idx 0)
+                    (aset assignment idx 1)))))
+    assignment))
+
+
+;; map node number back into the literal or its negation
+;; use that to decide to give the assigment 0 or 1
+;; if
+;; (aset assignment  )
+
+;; if literals of the components are not assigned then
+;; give them a value of 1 their negations will be assigned
+;; the value 0 for each node we need to assign the
+;; correspoding clause a value of if it has not already
+;; been assigned a TODO : how do we go backwards from node
+;; the clause ??
 
 
 
@@ -253,7 +273,7 @@ callbacks called before and after visiting `node`. "
   (sat/clear)
   (sat/parse-file input-file)
   (sat/build-constraint-graph sat/num-variables sat/clauses)
-  (sat/find-strong-components sat/constraint-graph))
+  (sat/find-satisfying-assignment sat/constraint-graph))
 
 (sat/check-satisfiable "tests/01")
 
