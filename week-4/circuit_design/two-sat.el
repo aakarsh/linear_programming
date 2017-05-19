@@ -1,5 +1,5 @@
 (require 'g)
-(require 'an-alias )
+(require 'an-lib )
 (require 'cl-lib)
 
 (defvar sat/num-clauses 0)
@@ -60,7 +60,7 @@ mapped as :
 
 (defun sat/make-nodes(num)
   "Returns a vector of sat/nodes with increasing sequence numbers "
-  (g/make-vector num (lambda(i) (make-sat/node :number i))))
+  (an/vector:make num (lambda(i) (make-sat/node :number i))))
 
 (defun sat/build-constraint-graph(num-variables clauses)
   "Builds a constraint graph which contains both the literal and its conjugation"
@@ -69,6 +69,8 @@ mapped as :
     (setf sat/constraint-graph (sat/make-constraint-graph num-variables clauses))))
 
 (defun sat/reverse-graph(graph)
+  "Create a reverse graph such that if (i,j) is edge
+in G then (j,i) is an edge in reverse(G)"
   (loop
    with size = (* 2 sat/num-variables)
    with new-graph = (table/make size size nil)
@@ -260,7 +262,7 @@ callbacks called before and after visiting `node`. "
   (setf sat/constraint-graph nil))
 
 (defun sat/file-parseline(line-number line)
-  (let ((nums (g/line-to-numbers line)))
+  (let ((nums (an/buffer:line-to-numbers line)))
     (if (not (= line-number 0))
         (push nums sat/clauses)
       (setf sat/num-clauses (aref nums 0))
