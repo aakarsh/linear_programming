@@ -87,7 +87,7 @@ in G then (j,i) is an edge in reverse(G)"
 (cl-defun sat/dfs-visit-graph (graph nodes  &key (traverse-order nil) (post-dfs nil) (pre-vist nil) (post-visit nil))
   "Visit a complete graph using dfs. Restarting on each
 exhaustion, assumes node is vector "
-  (sat/nodes-clear-visited nodes)  
+  (sat/nodes-clear-visited nodes)
   (loop for node across
         (if traverse-order
             traverse-order  nodes)
@@ -110,7 +110,7 @@ visit. `pre-vist' and `post-visit' are optional key word
 callbacks called before and after visiting `node`. "
   (message "sat/dfs-visit:call %d" (sat/node-number node))
   (let* ((node-num (sat/node-number node))
-         (initial-node node))    
+         (initial-node node))
     (if pre-visit
         (progn
           (funcall pre-visit graph nodes node)))
@@ -151,9 +151,9 @@ callbacks called before and after visiting `node`. "
     node-order))
 
 (defun sat/make-component-nodes(nodes num-components)
-  (let ((component-nodes (sat/make-nodes num-components)))    
+  (let ((component-nodes (sat/make-nodes num-components)))
     (loop for node across nodes
-          for component-number = (sat/node-component node) 
+          for component-number = (sat/node-component node)
           for component = (aref component-nodes component-number ) do
           (push node (sat/node-data component)))
     component-nodes))
@@ -188,35 +188,53 @@ node.
 component numbers till each component is exhausted.
 3. Returns the number of components found."
   (lexical-let ((cur-component-number 0)
-                (dfs-post-order (sat/dfs-post-order graph nodes)))    
+                (dfs-post-order (sat/dfs-post-order graph nodes)))
     ;; Redo dfs this time going through reverse graph in node finish order
     (message "******Start Computing Component Number ********** ")
     (sat/dfs-visit-graph
      (sat/reverse-graph graph)  nodes
      :traverse-order dfs-post-order
-     :post-visit (lambda (graph nds nd)                                       
+     :post-visit (lambda (graph nds nd)
                    (setf (sat/node-component nd) cur-component-number)
-                   (message "assign-components : %d component: %d" (sat/node-number nd) (sat/node-component nd)))                         
+                   (message "assign-components : %d component: %d" (sat/node-number nd) (sat/node-component nd)))
      :post-dfs (lambda (graph nodes node)
                  (incf cur-component-number)))
     cur-component-number))
 
+(defun sat/cg-contradictionp (graph nodes)
+  "Checks the component assigment for nodes , if the literal and
+  its complement reside in the same component it signal's an
+  error"
+  (loop for node across sat/nodes
+        for node-id = (sat/node-number node)
+        for node-literal =  (sat/literal node-id)
+        for complement-literal = (* -1 node-literal)
+        for complement-idx = (sat/node-index complement-literal)
+        for complement = (aref sat/nodes complement-idx)
+        finally (return t)
+        always (not  (=  (sat/node-component node ) (sat/node-component complement)))))
+
 (defun sat/find-satisfying-assignment(graph)
   (let ((num-components 0)
-        (component-number 0))
+        (satisfiable t))
+    
     ;; Compute and assign components to nodes in the graph
     (setf num-components (sat/assign-components graph sat/nodes))
-    (setf component-number (-  num-components 1))
-    ;; Add node data into component nodes    
-    (let ((component-post-order nil)
-          (component-nodes (sat/make-component-nodes sat/nodes num-components))
-          (component-graph (sat/make-component-graph sat/nodes graph num-components)))
-      ;; Determine component post ordering
-      (setf component-post-order (reverse (sat/dfs-post-order component-graph component-nodes)))
-      ;; Go in Reverse topological order assigning the nodes in the
-      ;; component for all literals that are in maybe we need some
-      ;; sort of map from component number to nodes.      
-      (sat/compute-assignment  component-post-order))))
+    (setf satisfiable (sat/cg-contradictionp graph sat/nodes))
+    
+    (if (not satisfiable)
+        nil
+      (let ((component-post-order nil)
+            ;; Add node data into component nodes
+            (component-nodes (sat/make-component-nodes sat/nodes num-components))
+            (component-graph (sat/make-component-graph sat/nodes graph num-components)))
+        ;; Determine component post ordering
+        (setf component-post-order (reverse (sat/dfs-post-order component-graph component-nodes)))
+        ;; Go in Reverse topological order assigning the nodes in the
+        ;; component for all literals that are in maybe we need some
+        ;; sort of map from component number to nodes.
+        (sat/compute-assignment  component-post-order)))))
+
 
 (defun sat/compute-assignment (component-post-order)
   "Takes a component graph, traversing it in reverse topological
@@ -287,24 +305,25 @@ component numbers till each component is exhausted.
                          (aref assignment l1-idx))
           for l2-val = (if ( <  l2 0)
                            (sat/flip-assingment  (aref assignment l2-idx)  )
-                         (aref assignment l2-idx))          
+                         (aref assignment l2-idx))
           do
           (if  (not (or (sat/assign-bool  l1-val ) (sat/assign-bool l2-val) ))
               (error "Failing clause %s " clause)
-              ))    
+              ))
     retval))
 
 
 (defun sat/check-satisfiable(input-file)
-  (let ((assignment nil)) 
-    (sat/clear)    
+  (let ((assignment nil))
+    (sat/clear)
     (sat/parse-file input-file)
     (sat/build-constraint-graph sat/num-variables sat/clauses)
-    (setf assignment (sat/find-satisfying-assignment sat/constraint-graph))    
+    (setf assignment (sat/find-satisfying-assignment sat/constraint-graph))
     (if assignment
-        (sat/check-assignment sat/clauses assignment))))
+        (sat/check-assignment sat/clauses assignment)
+      (message "UNSATISFIABLE"))))
 
 
-(sat/check-satisfiable "tests/01")
+(sat/check-satisfiable "tests/02")
 
 (provide 'sat)
