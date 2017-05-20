@@ -135,20 +135,6 @@ callbacks called before and after visiting `node`. "
                 (sat/dfs-visit graph nodes node :post-visit post-visit :pre-visit  pre-visit)
                 (setf (sat/node-visited node) 'visited))))))
 
-(defun sat/nodes-by-decreasing-finish-time(nodes)
-  "Returns node by decreasing order of finish times."
-  (let ((node-order (make-vector (length nodes) 0)))
-    (loop for node across nodes
-          for i = 0 then (+ i 1)
-          do
-          (aset node-order i (sat/node-number node)))
-    (setf node-order
-          (sort node-order
-                (lambda (i j)
-                  (let* ((node1 (aref sat/nodes i))
-                         (node2 (aref sat/nodes j)))
-                    (<  (sat/node-finish-time node1) (sat/node-finish-time node2))))))
-    node-order))
 
 (defun sat/make-component-nodes(nodes num-components)
   (let ((component-nodes (sat/make-nodes num-components)))
@@ -324,6 +310,7 @@ component numbers till each component is exhausted.
     (if assignment
         (sat/check-assignment sat/clauses assignment)
       (message "UNSATISFIABLE"))))
+
 
 (sat/check-satisfiable "tests/02")
 
