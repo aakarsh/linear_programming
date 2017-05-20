@@ -212,12 +212,11 @@ component numbers till each component is exhausted.
           (component-nodes (sat/make-component-nodes sat/nodes num-components))
           (component-graph (sat/make-component-graph sat/nodes graph num-components)))
       ;; Determine component post ordering
-      (setf component-post-order (sat/dfs-post-order component-graph component-nodes))
+      (setf component-post-order (reverse (sat/dfs-post-order component-graph component-nodes)))
       ;; Go in Reverse topological order assigning the nodes in the
       ;; component for all literals that are in maybe we need some
       ;; sort of map from component number to nodes.      
       (sat/compute-assignment  component-post-order))))
-
 
 (defun sat/compute-assignment (component-post-order)
   "Takes a component graph, traversing it in reverse topological
@@ -236,19 +235,16 @@ component numbers till each component is exhausted.
                     (aset assignment idx 1)))))
     assignment))
 
-
 ;; map node number back into the literal or its negation
 ;; use that to decide to give the assigment 0 or 1
 ;; if
 ;; (aset assignment  )
-
 ;; if literals of the components are not assigned then
 ;; give them a value of 1 their negations will be assigned
 ;; the value 0 for each node we need to assign the
 ;; correspoding clause a value of if it has not already
 ;; been assigned a TODO : how do we go backwards from node
 ;; the clause ??
-
 
 (defun sat/nodes-clear-visited (nodes)
   "Mark all nodes as unvisited."
@@ -277,8 +273,6 @@ component numbers till each component is exhausted.
   (sat/parse-file input-file)
   (sat/build-constraint-graph sat/num-variables sat/clauses)
   (sat/find-satisfying-assignment sat/constraint-graph))
-
-;; (sat/find-satisfying-assignment sat/constraint-graph)
 
 (sat/check-satisfiable "tests/01")
 
