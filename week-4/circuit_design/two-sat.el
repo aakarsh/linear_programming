@@ -268,11 +268,42 @@ component numbers till each component is exhausted.
 (defun sat/parse-file(input-file)
   (an/file:map-over-file input-file 'sat/file-parseline))
 
+(defun sat/flip-assingment (a)
+  (if (= a 1 ) 0 1))
+(defun sat/assign-bool (a)
+  (if (= a 1 ) t nil))
+
+(defun sat/check-assignment (clauses assignment)
+  "Takes a satisfying assigment and verifies that it satisfies a set of clauses. "
+  (let ((retval t))
+    (loop for clause in clauses
+          for l1 = (aref clause 0)
+          for l1-idx = (-  (abs l1) 1)
+          for l2 = (aref clause 1)
+          for l2-idx = (-  (abs l2) 1)
+
+          for l1-val = (if ( <  l1 0)
+                           (sat/flip-assingment  (aref assignment l1-idx)  )
+                         (aref assignment l1-idx))
+          for l2-val = (if ( <  l2 0)
+                           (sat/flip-assingment  (aref assignment l2-idx)  )
+                         (aref assignment l2-idx))          
+          do
+          (if  (not (or (sat/assign-bool  l1-val ) (sat/assign-bool l2-val) ))
+              (error "Failing clause %s " clause)
+              ))    
+    retval))
+
+
 (defun sat/check-satisfiable(input-file)
-  (sat/clear)
-  (sat/parse-file input-file)
-  (sat/build-constraint-graph sat/num-variables sat/clauses)
-  (sat/find-satisfying-assignment sat/constraint-graph))
+  (let ((assignment nil)) 
+    (sat/clear)    
+    (sat/parse-file input-file)
+    (sat/build-constraint-graph sat/num-variables sat/clauses)
+    (setf assignment (sat/find-satisfying-assignment sat/constraint-graph))    
+    (if assignment
+        (sat/check-assignment sat/clauses assignment))))
+
 
 (sat/check-satisfiable "tests/01")
 
