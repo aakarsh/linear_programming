@@ -111,6 +111,8 @@ callbacks called before and after visiting `node`. "
   (message "sat/dfs-visit:call %d" (sat/node-number node))
   (let* ((node-num (sat/node-number node))
          (initial-node node))
+    ;; mark curront node as visiting
+    (setf (sat/node-visited node) 'visiting)
     (if pre-visit
         (progn
           (funcall pre-visit graph nodes node)))
@@ -125,13 +127,11 @@ callbacks called before and after visiting `node`. "
             (if post-visit
                 (funcall post-visit graph nodes initial-node)))
           do
-          (if (and neighbour-p
-                   (not (equal (sat/node-visited node) 'visited)))
+          (if (and neighbour-p (not (sat/node-visited node)))              
               (progn
                 (message "nodes : %s" nodes)
                 (message "node : %d ->[j %d neighbour-p %s %s]" node-num j neighbour-p node )
                 (message "Started Visiting :%d" (sat/node-number node))
-                (setf (sat/node-visited node) 'visiting)
                 (sat/dfs-visit graph nodes node :post-visit post-visit :pre-visit  pre-visit)
                 (setf (sat/node-visited node) 'visited))))))
 
@@ -189,8 +189,10 @@ component numbers till each component is exhausted.
 3. Returns the number of components found."
   (lexical-let ((cur-component-number 0)
                 (dfs-post-order (sat/dfs-post-order graph nodes)))
+    
     ;; Redo dfs this time going through reverse graph in node finish order
     (message "******Start Computing Component Number ********** ")
+    
     (sat/dfs-visit-graph
      (sat/reverse-graph graph)  nodes
      :traverse-order dfs-post-order
@@ -288,6 +290,7 @@ component numbers till each component is exhausted.
 
 (defun sat/flip-assingment (a)
   (if (= a 1 ) 0 1))
+
 (defun sat/assign-bool (a)
   (if (= a 1 ) t nil))
 
@@ -312,7 +315,6 @@ component numbers till each component is exhausted.
               ))
     retval))
 
-
 (defun sat/check-satisfiable(input-file)
   (let ((assignment nil))
     (sat/clear)
@@ -323,7 +325,8 @@ component numbers till each component is exhausted.
         (sat/check-assignment sat/clauses assignment)
       (message "UNSATISFIABLE"))))
 
-
 (sat/check-satisfiable "tests/02")
+
+
 
 (provide 'sat)
