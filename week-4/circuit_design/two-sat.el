@@ -169,5 +169,4 @@ it. If graph is unsatisfiable returns nil. "
 (ert-deftest sat/test-02 ()
   (should (sat/check-satisfiable "tests/02")))
 
-
 (provide 'sat)
