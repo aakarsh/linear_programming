@@ -1,5 +1,5 @@
 (require 'an-lib )
-(require 'ert)
+(require 'gert)
 (require 'cl-lib)
 
 (defvar sat/num-clauses 0)
