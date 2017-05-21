@@ -20,6 +20,7 @@ struct TwoSatisfiability {
         // It is too slow to pass the problem.
         // Implement a more efficient algorithm here.
         for (int mask = 0; mask < (1 << numVars); ++mask) {
+
             for (int i = 0; i < numVars; ++i) {
                 result[i] = (mask >> i) & 1;
             }
