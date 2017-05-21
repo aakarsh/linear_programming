@@ -1,4 +1,5 @@
 (require 'an-lib )
+(require 'ert)
 (require 'cl-lib)
 
 (defvar sat/num-clauses 0)
@@ -11,17 +12,6 @@
 ;;  x is in postion x
 (defvar sat/constraint-graph nil)
 
-;; (x or y) -> { -x -> y , -y -> x }
-;; [x-1][y] = 1
-;; [y-1][x] = 1
-;; for first-idx = (if (< first 0)
-;;                     (- (abs first) 1)
-;;                   first)
-;; for second-idx = (if (< second 0)
-;;                      (- (abs second ) 1)
-;;                    second)
-;; even odd maybe 0 - -1
-;;
 ;; 0 -> -1 , 1 -> 1 , 2 -> -2 , 3 -> 2 , 4 -> -3,
 (defun sat/node-index(literal)
   "Maps a literal integer value x to a node-number in the
@@ -57,71 +47,48 @@ mapped as :
           (table/setf graph (sat/node-index neg-second) (sat/node-index first) t))
     graph))
 
-(defun sat/make-nodes(num)
-  "Returns a vector of sat/nodes with increasing sequence numbers "
-  (an/vector:make num (lambda(i) (make-an/graph:node :number i))))
-
 (defun sat/build-constraint-graph(num-variables clauses)
   "Builds a constraint graph which contains both the literal and its conjugation"
-  (let ((graph-size (* 2 num-variables)))
-    (setf sat/nodes (sat/make-nodes graph-size))
-    (setf sat/constraint-graph (sat/make-cg-clauses num-variables clauses))))
+  (let ((graph-size (* 2 num-variables)))    
+    (make-an/graph
+     :nodes  (an/graph:make-nodes graph-size)
+     :matrix  (sat/make-cg-clauses num-variables clauses))))
 
-(defun sat/make-component-nodes(nodes num-components)
-  (let ((component-nodes (sat/make-nodes num-components)))
-    (loop for node across nodes
-          for component-number = (an/graph:node-component node)
-          for component = (aref component-nodes component-number ) do
-          (push node (an/graph:node-data component)))
-    component-nodes))
-
-(defun sat/make-component-graph(nodes graph num-components)
-  "A component graph is a directed acyclic graph which summarises
-the original graph containing one vertex per strongly connected
-component in the graph."
-  (let ((component-graph (table/make num-components num-components nil)))
-    (loop for i from 0 below (table/nrows graph )
-          for i-cmp =  (an/graph:node-component (aref nodes i)) do
-          (loop for j from 0 below (table/ncols graph)
-                for j-cmp =  (an/graph:node-component (aref nodes j)) do
-                ;; change component number to index
-                (if (and  (table/at graph i j)   (not (eq i-cmp j-cmp)))
-                    (table/setf component-graph i-cmp j-cmp t))))
-    component-graph))
-
-(defun sat/cg-contradictionp (graph nodes)
+(defun sat/cg-contradictionp (g)
   "Checks the component assigment for nodes , if the literal and
   its complement reside in the same component it signal's an
   error"
-  (loop for node across sat/nodes
+  (loop with graph =  (an/graph-matrix g)
+        with nodes =  (an/graph-nodes g)
+        for node across nodes
         for node-id = (an/graph:node-number node)
         for node-literal =  (sat/literal node-id)
         for complement-literal = (* -1 node-literal)
         for complement-idx = (sat/node-index complement-literal)
-        for complement = (aref sat/nodes complement-idx)
+        for complement = (aref nodes complement-idx)
         finally (return t)
         always (not  (=  (an/graph:node-component node ) (an/graph:node-component complement)))))
 
-(defun sat/find-satisfying-assignment(graph)
+(defun sat/find-satisfying-assignment(g)
+  "Takes a constraint graph computes a satisfying assignment for
+it. If graph is unsatisfiable returns nil. "
   (let ((num-components 0)
         (satisfiable t))
     ;; Compute and assign components to nodes in the graph
-    (setf num-components (an/graph:assign-components graph sat/nodes))
-    (setf satisfiable (sat/cg-contradictionp graph sat/nodes))
-
+    (setf num-components (an/graph:assign-components g))
+    (setf satisfiable (sat/cg-contradictionp g))
     (if (not satisfiable)
         nil
       ;; Add node data into component nodes
-      (let* ((component-nodes (sat/make-component-nodes sat/nodes num-components))
-             (component-graph (sat/make-component-graph sat/nodes graph num-components))
-             ;; Determine component post ordering
-             (component-post-order   (an/graph:dfs-post-order component-graph component-nodes)))
-
+      (let* ((cg (an/graph-component-graph g num-components))
+             (component-nodes (an/graph-nodes cg))
+             (component-graph (an/graph-matrix cg))
+             ;; Determine component post-ordering
+             (component-post-order (an/graph:dfs-post-order component-graph component-nodes)))
         ;; Go in Reverse topological order assigning the nodes in the
         ;; component for all literals that are in maybe we need some
         ;; sort of map from component number to nodes.
         (sat/compute-assignment  (reverse  component-post-order))))))
-
 
 (defun sat/compute-assignment (component-post-order)
   "Takes a component graph, traversing it in reverse topological
@@ -139,11 +106,6 @@ component in the graph."
                       (aset assignment idx 0)
                     (aset assignment idx 1)))))
     assignment))
-
-(defun sat/nodes-clear-visited (nodes)
-  "Mark all nodes as unvisited."
-  (loop for node across nodes do
-        (setf (an/graph:node-visited node) nil)))
 
 (defun sat/clear()
   (setf sat/num-clauses 0)
@@ -190,16 +152,22 @@ component in the graph."
     retval))
 
 (defun sat/check-satisfiable(input-file)
-  (let ((assignment nil))
+  (let ((assignment nil)
+        (g nil))
+    
     (sat/clear)
     (sat/parse-file input-file)
-    (sat/build-constraint-graph sat/num-variables sat/clauses)
-    (setf assignment (sat/find-satisfying-assignment sat/constraint-graph))
+    (setf g (sat/build-constraint-graph sat/num-variables sat/clauses))
+    (setf assignment (sat/find-satisfying-assignment g))
     (if assignment
         (sat/check-assignment sat/clauses assignment)
-      (message "UNSATISFIABLE"))))
+      "UNSATISFIABLE")))
 
-(sat/check-satisfiable "tests/01")
-(sat/check-satisfiable "tests/02")
+(ert-deftest sat/test-01 ()
+  (should (sat/check-satisfiable "tests/01")))
+
+(ert-deftest sat/test-02 ()
+  (should (sat/check-satisfiable "tests/02")))
+
 
 (provide 'sat)
