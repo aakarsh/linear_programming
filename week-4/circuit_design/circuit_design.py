@@ -59,8 +59,11 @@ class Graph:
     def dfs_post_order(self):
         """ Computes a post ordering for a graph represented by its nodes """
         nodes_finish_order = []
+        
         self.dfs_visit_graph\
         (post_visit = lambda node: nodes_finish_order.append(node))
+        # since we used append instead of push, 
+        nodes_finish_order.reverse()
         return nodes_finish_order
 
     def dfs_visit_graph(self, traverse_order=None,post_dfs=None,post_visit=None,pre_visit=None):
@@ -76,7 +79,7 @@ class Graph:
 
         for node in traverse_order:
             if not node.visited:
-                self.dfs_visit(node,post_visit=post_visit,pre_visit =pre_visit)
+                self.dfs_visit(node,post_visit = post_visit, pre_visit = pre_visit)
                 if post_dfs:
                     post_dfs(node)
 
@@ -101,32 +104,40 @@ class Graph:
     def assign_components(self):
         """ Accepts a graph consisting of nodes and assigns the nodes
         components."""
-
         self.component_number  = 0
-        # Visit a reversed-version of graph in post order.
-        self.reverse()
-
+        
         def node_assign_component(node):
             node.component = self.component_number
+        
         def increment_component(node):
             self.component_number += 1
-            
-        # perform traversal on the reverse graph to assign
-        # nodes compoents,
-        self.dfs_visit_graph(traverse_order = self.dfs_post_order(),
+
+        post_order = self.dfs_post_order()
+        # Visit a reversed-version of graph in post order.
+        self.reverse()
+        
+        # perform traversal on the reverse graph to assign nodes
+        # components.
+        self.dfs_visit_graph(traverse_order = post_order,
                              post_visit     = node_assign_component,
                              post_dfs       = increment_component)
 
         # return graph back to orginal state
         self.reverse()
+        
         self.num_components = self.component_number
 
 
-
     def build_component_graph(self):
-        """ Builds a component graph summarizing the graph """
+        """ Builds a component graph summarizing the graph. """
+        
         self.assign_components();
-        component_nodes = [ Node(i) for i in range(0,self.num_components) ]
+
+        if debug:
+            for node in self.nodes:
+                print("node %d -> comp %d" %(node.number, node.component))
+            
+        component_nodes = [Node(i) for i in range(0,self.num_components)]
 
         # set the data of component nodes to be the node
         for node in self.nodes:
@@ -135,11 +146,15 @@ class Graph:
         # Iterate through all the edges and if not present add it
         # the component graph.
         for node in self.nodes:
-            component_nodes[node.component].neighbours.extend(\
-                list(set([self.nodes[n].component for n in node.neighbours])))
-        
+            for neighbour in node.neighbours:
+                component_nodes[node.component].neighbours.append(self.nodes[neighbour].component)
 
-        return Graph(component_nodes)
+        for component in component_nodes:
+            component.neighbours = list(set(component.neighbours))
+
+        cg = Graph(component_nodes)
+        
+        return cg
 
 class TwoSatSolver:
     """ Solver for boolean satisfiablity problem
@@ -152,6 +167,7 @@ class TwoSatSolver:
         self.clauses = clauses
         self.num_variables = num_variables
         self.num_clauses = len(clauses)
+        
         # cg is the self's constraint graph
         self.nodes = [ Node(i) for i in range(0,2*num_variables) ]
         self.add_constraints(self.nodes,self.clauses)
@@ -177,8 +193,7 @@ class TwoSatSolver:
 
     def add_constraints(self,nodes,clauses):
         """ Use clauses to construct graph over nodes by assigning
-        neighbours"""
-
+        neighbours """
         node_idx = self.node_idx
         for clause in clauses:
             l1,l2 = clause
@@ -188,43 +203,56 @@ class TwoSatSolver:
 
     def contains_contradiction(self):
         """ Checks if node and its complement lie in the same """
-        for node in self.cg.nodes:            
+        for node in self.cg.nodes:
             node_literal = self.literal(node.number)
             compliment_literal = node_literal * -1
             compliment_idx = self.node_idx(compliment_literal)
             compliment = self.cg.nodes[compliment_idx]
-            #print("%d:(%d,%d)"% (node.number,node.component,compliment.component))
             if node.component == compliment.component:
                 return True
-            
+
         return False
-            
-            
+
+
     def find_sat(self):
         """ Check the satisfiability """
         if debug:
             print("Clauses:%s" % self.clauses)
-            print("Node Post Order: %s" % self.cg.dfs_post_order())
         sat = [None for i in range(self.num_variables)]
 
         self.cg.assign_components()
         # If a literal and its complement are in the same
         # component then we have a contradiciton the graph is
-        # unsatisfiable.        
+        # unsatisfiable.
         if self.contains_contradiction():
-            return None 
-        component_graph = self.cg.build_component_graph()        
+            return None
+        
+        component_graph = self.cg.build_component_graph()
         component_order = component_graph.dfs_post_order()
+        # is the post order wrong??
         component_order.reverse()
+        if debug:
+            print("Component Traversal Order :")
+            for c in component_order:
+                print("c:%d, nodes:%s, neightbours: %s"%(c.number,[n.number for n in c.data], c.neighbours))
+            print("")
+
 
         for component in component_order:
             for node in component.data:
                 literal = self.literal(node.number)
-                literal_idx = int(abs(literal) - 1)
+                literal_idx = int(abs(literal) - 1)                
                 if  sat[literal_idx] is None:
                     if debug: print("literal_idx : %d " % literal_idx)
                     sat[literal_idx] = 0 if (literal < 0) else 1
-        return sat
+
+        result = [None for x in range(0,len(sat))]
+        
+        for i in range(0,len(sat)):
+            result[i] = i+1 if sat[i] == 1 else -(i+1)
+            
+        return result
+
 
 def simple_test():
     print("start simple_test")
@@ -232,7 +260,7 @@ def simple_test():
     print(ts.find_sat())
     ts = TwoSatSolver([[1,1],[-1,-1]],2)
     print(ts.find_sat())
-    
+
 # This solution tries all possible 2^n variable assignments.
 # It is too slow to pass the problem.
 # Implement a more efficient algorithm here.
@@ -264,7 +292,8 @@ def main():
         print("UNSATISFIABLE")
     else:
         print("SATISFIABLE");
-        print(" ".join(str(-i-1 if result[i] else i+1) for i in range(n)))
+        print(result)
+        print(" ".join(str(-i-1 if result[i] else i+1) for i in range(num_clauses)))
 
 
 if __name__ == "__main__":
