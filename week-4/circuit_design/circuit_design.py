@@ -291,9 +291,9 @@ def main():
     if not result:
         print("UNSATISFIABLE")
     else:
-        print("SATISFIABLE");
-        print(result)
-        print(" ".join(str(-i-1 if result[i] else i+1) for i in range(num_clauses)))
+        print("SATISFIABLE")
+        print(" ".join(map(str,result)))
+        #print(" ".join(str(-i-1 if result[i] else i+1) for i in range(num_clauses)))
 
 
 if __name__ == "__main__":
