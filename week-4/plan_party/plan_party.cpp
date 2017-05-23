@@ -5,10 +5,12 @@ struct Vertex {
     int weight;
     std::vector <int> children;
 };
+
 typedef std::vector<Vertex> Graph;
 typedef std::vector<int> Sum;
 
 Graph ReadTree() {
+  
     int vertices_count;
     std::cin >> vertices_count;
 
@@ -28,6 +30,7 @@ Graph ReadTree() {
 }
 
 void dfs(const Graph &tree, int vertex, int parent) {
+  
     for (int child : tree[vertex].children)
         if (child != parent)
             dfs(tree, child, vertex);
@@ -49,6 +52,7 @@ int MaxWeightIndependentTreeSubset(const Graph &tree) {
 int main() {
     // This code is here to increase the stack size to avoid stack overflow
     // in depth-first search.
+  
     const rlim_t kStackSize = 64L * 1024L * 1024L;  // min stack size = 64 Mb
     struct rlimit rl;
     int result;
