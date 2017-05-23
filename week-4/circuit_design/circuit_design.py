@@ -210,7 +210,6 @@ class TwoSatSolver:
             compliment = self.cg.nodes[compliment_idx]
             if node.component == compliment.component:
                 return True
-
         return False
 
 
@@ -283,17 +282,18 @@ def isSatisfiableBruteForce(clauses, num_variables):
 
 
 def main():
-    num_clauses, num_variables = map(int, input().split())
+    num_variables,num_clauses  = map(int, input().split())
     clauses = [ list(map(int, input().split())) for i in range(num_clauses) ]
 
-    result = TwoSatSolver(clauses,num_clauses).find_sat()
+    result = TwoSatSolver(clauses,num_variables).find_sat()
 
     if not result:
         print("UNSATISFIABLE")
     else:
         print("SATISFIABLE")
         print(" ".join(map(str,result)))
-        #print(" ".join(str(-i-1 if result[i] else i+1) for i in range(num_clauses)))
+        
+        # print(" ".join(str(-i-1 if result[i] else i+1) for i in range(num_clauses)))
 
 
 if __name__ == "__main__":
