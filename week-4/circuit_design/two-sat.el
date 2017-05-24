@@ -32,27 +32,21 @@ mapped as :
                  (* -1 (+ node-index 2 ))
                (+ node-index 1))))
 
-(defun sat/make-cg-clauses(num-variables clauses)
-  "Takes number of literal and list of clauses and builds a
-   constraint graph."
-  (let* ((size (* num-variables 2))
-        (graph (table/make size size  nil)))
-    (loop for clause in clauses
-          for first  = (aref clause 0)
-          for neg-first = (* -1 first)
-          for second = (aref clause 1)
-          for neg-second = (* -1 second)
-          do
-          (table/setf graph (sat/node-index neg-first)  (sat/node-index second) t)
-          (table/setf graph (sat/node-index neg-second) (sat/node-index first) t))
-    graph))
+(defun sat/clauses-to-vertex-pairs (clauses)
+  (-flatten
+   (loop for clause in clauses
+         for first  = (aref clause 0)
+         for neg-first = (* -1 first)
+         for second = (aref clause 1)
+         for neg-second = (* -1 second)
+         collect 
+         (list
+          (vector  (sat/node-index neg-first)  (sat/node-index second))
+          (vector  (sat/node-index neg-second) (sat/node-index first))))))
 
 (defun sat/build-constraint-graph(num-variables clauses)
   "Builds a constraint graph which contains both the literal and its conjugation"
-  (let ((graph-size (* 2 num-variables)))    
-    (make-an/graph
-     :nodes  (an/graph:make-nodes graph-size)
-     :matrix  (sat/make-cg-clauses num-variables clauses))))
+  (an/graph:make 'matrix (* 2 num-variables) (sat/clauses-to-vertex-pairs clauses)))
 
 (defun sat/cg-contradictionp (g)
   "Checks the component assigment for nodes , if the literal and
@@ -150,13 +144,11 @@ it. If graph is unsatisfiable returns nil. "
     retval))
 
 (defun sat/check-satisfiable(input-file)
-  (let ((assignment nil)
-        (g nil))
-    
-    (sat/clear)
-    (sat/parse-file input-file)
-    (setf g (sat/build-constraint-graph sat/num-variables sat/clauses))
-    (setf assignment (sat/find-satisfying-assignment g))
+  (sat/clear)
+  (sat/parse-file input-file)
+  (let ((assignment
+          (sat/find-satisfying-assignment
+           (sat/build-constraint-graph sat/num-variables sat/clauses))))
     (if assignment
         (sat/check-assignment sat/clauses assignment)
       "UNSATISFIABLE")))
