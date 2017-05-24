@@ -1,5 +1,5 @@
 (require 'an-lib )
-(require 'gert)
+(require 'ert)
 (require 'cl-lib)
 
 (defvar sat/num-clauses 0)
@@ -81,10 +81,8 @@ it. If graph is unsatisfiable returns nil. "
         nil
       ;; Add node data into component nodes
       (let* ((cg (an/graph-component-graph g num-components))
-             (component-nodes (an/graph-nodes cg))
-             (component-graph (an/graph-matrix cg))
              ;; Determine component post-ordering
-             (component-post-order (an/graph:dfs-post-order component-graph component-nodes)))
+             (component-post-order (an/graph:dfs-post-order cg)))
         ;; Go in Reverse topological order assigning the nodes in the
         ;; component for all literals that are in maybe we need some
         ;; sort of map from component number to nodes.

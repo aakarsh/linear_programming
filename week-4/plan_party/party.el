@@ -91,23 +91,25 @@ nodes, with appropriate parent child relationships setup."
 (defun an/optimal-value-node (tree-node tree-nodes optimal-values)
   (let* ((idx             (an/tree-node-idx tree-node))
          (children        (an/tree-node-children tree-node))
+         (leafp            (not children))
+         (grand-children  (an/tree-node-grand-children tree-node tree-nodes))
          (cur-node-weight (an/tree-node-data tree-node))
          (opt             (aref optimal-values idx ))
          (optimum-with-node nil)
-         (optimum-without-node nil))    
-    (if (not children)
+         (optimum-without-node nil))
+    ;; Optimimum for a leaf node is just current node
+    (if leafp
         cur-node-weight
-      ;; has children we need to select the maximum
-      (if opt
+      (if opt  ;; Pre-computed optimum
           opt
         (setf optimum-without-node
               (an/sum-optimum-values children tree-nodes optimal-values))
         (setf optimum-with-node
               (+ cur-node-weight
-                 (an/sum-optimum-values (an/tree-node-grand-children tree-node tree-nodes) tree-nodes optimal-values)))        
+                 (an/sum-optimum-values grand-children tree-nodes optimal-values)))
         (aset optimal-values idx (max optimum-with-node optimum-without-node))))))
 
-(defun an/party-problem (input)
+(defun an/party-problem-optimum (input)
   "Weight of the maximum independent vertex set ofthe tree input."
   (let* ((pp (an/party-parse-file input))
          (tree-nodes (an/party-build-tree pp))
@@ -115,6 +117,23 @@ nodes, with appropriate parent child relationships setup."
          (optimal-values (make-vector (length tree-nodes) nil)))
     (an/optimal-value-node root tree-nodes optimal-values )))
 
+(defvar an/party-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-4/plan_party" )
+(an/party-problem-optimum (concat  an/party-dir  "/tests/03" ))
+
+(ert-deftest an/party-problem-test-01 ()
+  (should (equal 1000 (an/party-problem (concat an/party-dir "/tests/01")))))
+
+(ert-deftest an/party-problem-test-02 ()
+  (should (equal 2 (an/party-problem (concat an/party-dir "/tests/02") ))))
+
+(ert-deftest an/party-problem-test-03 ()
+  (should (equal 11
+                 (an/party-problem (concat  an/party-dir  "/tests/03" ))
+                 )))
+
+
 (setf pp1 (an/party-parse-file "tests/01"))
 (setf pp2 (an/party-parse-file "tests/02"))
 (setf pp3 (an/party-parse-file "tests/03"))
+
+
