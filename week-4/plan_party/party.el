@@ -26,6 +26,17 @@
                      (cons (an/buffer:line-to-numbers line) (an/party-problem-relations p)))))))
   p))
 
+(defun an/build-party-graph (pp)
+  "Build a graph of the party problem."
+  (an/graph:make 'adj-list
+                 (an/party-problem-size pp)
+                 (loop for r in (an/party-problem-relations pp)
+                       for v1  = (- (aref r 0) 1)
+                       for v2  = (- (aref r 1) 1)
+                       collect (vector v1 v2))
+                 :edge-type 'undirected))
+
+
 (defun an/party-build-tree(party-problem)
   "Construct a tree for the party problem, return the array of
 nodes, with appropriate parent child relationships setup."
@@ -33,22 +44,27 @@ nodes, with appropriate parent child relationships setup."
          (relations (an/party-problem-relations pp))
          (weights   (an/party-problem-weights pp))
          (size (an/party-problem-size pp))
+         (graph (an/build-party-graph pp))
          (tree-nodes (an/vector:make size (lambda (i) (make-an/tree-node :idx i)))))
+
     (loop for w across weights
           for i  = 0 then (+ i 1)
           for node = (aref tree-nodes i )
-          do
-          (setf (an/tree-node-data node)  w))
-    (loop for relation in relations
-          for boss = (-  (aref relation 0) 1)
-          for boss-node = (aref tree-nodes boss)
-          for boss-idx = (an/tree-node-idx boss-node)
-          for serf = (- (aref relation 1) 1)
-          for serf-node = (aref tree-nodes serf)
-          for serf-idx = (an/tree-node-idx serf-node)
-          do
-          (push serf-idx  (an/tree-node-children boss-node))
-          (setf (an/tree-node-parent serf-node) boss-idx))
+          do (setf (an/tree-node-data node)  w))
+
+    ;; Use dfs to construct an undirected tree, possibly wasteful.
+    ;; but a proof of concept.
+    (an/graph:dfs-visit-graph
+     graph
+     :pre-visit
+     (lambda (g parent node) ;; before going into node -- just add it to its parent list of children --
+       (if parent
+           (let* ((nn (an/graph:node-number node))
+                  (pn (an/graph:node-number parent))
+                  (parent-tree-node (aref tree-nodes pn))
+                  (child-tree-node (aref tree-nodes nn)))             
+             (push nn (an/tree-node-children parent-tree-node))
+             (setf (an/tree-node-parent child-tree-node)  pn)))))
     tree-nodes))
 
 (defun an/tree-filter (tree-nodes filter)
@@ -75,7 +91,7 @@ nodes, with appropriate parent child relationships setup."
 
 (defun an/find-tree-root (tree-nodes)
   "Find node with no parent."
- (an/tree-find tree-nodes 'an/tree-node-rootp))
+  (an/tree-find tree-nodes 'an/tree-node-rootp))
 
 (defun an/sum-optimum-values (node-idxs nodes optimal-values)
   (loop for idx in node-idxs
@@ -118,22 +134,17 @@ nodes, with appropriate parent child relationships setup."
     (an/optimal-value-node root tree-nodes optimal-values )))
 
 (defvar an/party-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-4/plan_party" )
-(an/party-problem-optimum (concat  an/party-dir  "/tests/03" ))
 
 (ert-deftest an/party-problem-test-01 ()
-  (should (equal 1000 (an/party-problem (concat an/party-dir "/tests/01")))))
+  (should (equal 1000
+                 (an/party-problem-optimum (concat an/party-dir "/tests/01"))
+                 )))
 
 (ert-deftest an/party-problem-test-02 ()
-  (should (equal 2 (an/party-problem (concat an/party-dir "/tests/02") ))))
+  (should (equal 2 (an/party-problem-optimum (concat an/party-dir "/tests/02")) )))
 
 (ert-deftest an/party-problem-test-03 ()
   (should (equal 11
-                 (an/party-problem (concat  an/party-dir  "/tests/03" ))
-                 )))
-
-
-(setf pp1 (an/party-parse-file "tests/01"))
-(setf pp2 (an/party-parse-file "tests/02"))
-(setf pp3 (an/party-parse-file "tests/03"))
-
+                 (an/party-problem-optimum (concat  an/party-dir  "/tests/03" ))))
+  )
 
