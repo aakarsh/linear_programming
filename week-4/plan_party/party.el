@@ -45,6 +45,7 @@ nodes, with appropriate parent child relationships setup."
          (size (an/party-problem-size pp))
          (graph (an/build-party-graph pp))
          (tree-nodes (an/vector:make size (lambda (i) (make-an/tree-node :idx i)))))
+    
     (loop for w across weights
           for i  = 0 then (+ i 1)
           for node = (aref tree-nodes i )
