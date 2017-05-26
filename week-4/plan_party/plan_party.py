@@ -3,7 +3,9 @@
 import sys
 import threading
 
-debug = True
+debug = False
+max_depth = 10
+depth_record ={"max_weight_subset":0}
 
 class PartyProblem:
 
@@ -27,7 +29,8 @@ class PartyProblem:
 
     @staticmethod
     def from_input():
-        """Parse party problem form stdin."""
+        """Read  party problem from stdin."""
+        
         pp = PartyProblem()
         pp.size = int(input())
         pp.weights = map(int,input().split())
@@ -43,11 +46,24 @@ class PartyProblem:
 class TreeNode:
 
     def __init__(self,idx, weight, parent=None, children=[]):
-        """tree node """
+        """Tree node """
+        self.tree = None
         self.idx = idx
         self.weight = weight
         self.parent = parent
-        self.children = children
+        self.children = children[:] # tricky-make sure not to attach reference.
+
+    def __repr__(self):
+        return "<TreeNode idx:%s , weight : %s , parent : %s , children : %s >"%(self.idx,self.weight,self.parent,self.children)
+    
+    def __str__(self):
+        return self.__repr__();
+        
+    def grand_children(self):
+        gc = []
+        for child_idx in self.children:
+            gc.extend(self.tree[child_idx].children)
+        return gc
 
     @staticmethod
     def from_vertex(vertex):
@@ -60,19 +76,30 @@ class TreeNode:
         """Build a tree by going through it."""
 
         if debug: print("Read Vertices : %s " % read_vertices)
-        
+        if debug: print("Read Vertices:")
+        for v in read_vertices:
+            if debug: print(v)
+        # Construct a Tree Node for every vertex
         tree_nodes = [TreeNode.from_vertex(v) for v in read_vertices]
+        
+        for node in tree_nodes:
+            node.tree = tree_nodes
+            if debug: print(node)
 
-        def vertex_visit(tree,node,parent):
-            if parent:
-                tree_nodes[node.idx].parent = parent.idx
-                parent.children.append(node.idx)
-                print("vertex_visit: vertex : %s parent : %s " % (node.idx,parent.idx))
-            else:
-                # root's children will append them selves to it
-                print("vertex_visit: root_vertex : %s  " % (node.idx))
+        def pre_visit(tree,node,parent):            
+            if debug: print("vertex_visit: node %s , parent %s" % (node,parent))
+            if not parent: # root node has no parents
+                return            
+            tree_nodes[node.idx].parent = parent.idx
+            tree_nodes[parent.idx].children.append(node.idx)
 
-        dfs_graph(read_vertices,pre_visit=vertex_visit)
+          
+
+        dfs_graph(read_vertices,pre_visit=pre_visit)
+
+        for tree_node in tree_nodes:
+            if debug: print(tree_node);
+            
         return tree_nodes
 
 
@@ -98,18 +125,14 @@ class Vertex:
         self.children = []
 
     def __str__(self):
-        return "weight: %d children : [%s]" % (self.weight , self.children)
+        return self.__repr__();
 
     def __repr__(self):
-        return "Vertex(idx:%d,weight:%d,children:%s)" %(self.idx,self.weight,self.children)
+        return "<Vertex(idx:%d,weight:%d,children:%s)>" %(self.idx,self.weight,self.children)
 
 def dfs(tree, vertex, parent, pre_visit = None):
-    """ DFS on tree does not need to worry about cyces so i think we
-    can just go ahaead with it."""
-
     if pre_visit:
-        pre_visit(tree,vertex,parent)
-        
+        pre_visit(tree,vertex,parent)        
     vertex.visited = "visiting"    
     for child_idx in vertex.children:
         #if parent and parent.idx != child:
@@ -118,46 +141,79 @@ def dfs(tree, vertex, parent, pre_visit = None):
             dfs(tree,child,vertex,pre_visit)            
     vertex.visited = "visited"
 
-
 def dfs_graph(tree,pre_visit = None ):
     """Assuming that it is a connected tree """
     root = tree[0] # Arbitrarily pick the first vertex as start
     dfs(tree,root,None, pre_visit)
     return # collect collect using callback.
 
+def sum_node_opts(node_idxs, tree_nodes, optimal_values):
+    s = 0
+    for idx in node_idxs:
+        node = tree_nodes[idx]
+        s += max_weight_subset(node,tree_nodes,optimal_values)
+    return s
 
-def max_weight_subset(node,tree,optimal_values):
+def max_weight_subset(node,tree_nodes,optimal_values):
     """Find the maximum weighted independent tree subset for a given
     tree"""
+    
+
+    if debug: print("opts:%s"%optimal_values)
+    if debug: print("node %d children %s gc %s" % (node.idx ,node.children,node.grand_children()))    
     if  len(node.children) == 0:
         return node.weight
     
     if optimal_values[node.idx] : # pre-computed optimum value
         return optimal_values[node.idx]
 
-    # stuck here ....
-    # optimum_without_node = sum
-    
+    opt_without_node =  sum_node_opts(node.children,tree_nodes,optimal_values)
+    opt_with_node    =  node.weight + sum_node_opts(node.grand_children(),tree_nodes,optimal_values)
 
-    return 0
+    # Set the value of the new optimum node
+    optimal_values[node.idx] = max(opt_with_node,opt_without_node)    
+
+    return optimal_values[node.idx]
+
 
 # This code is used to avoid stack overflow issues
 sys.setrecursionlimit(10**6) # max depth of recursion
 threading.stack_size(2**26)  # new thread will get stack of such size
 
-def test():
-    tree = PartyProblem(5,[1,5,3,7,5],[(5,4),(2,3),(4,2),(1,2)]).make_tree()
-
-    simple_tree = TreeNode.build_tree(tree)
+def optimum(pp):
+    simple_tree = TreeNode.build_tree(pp.make_tree())
     root = TreeNode.find_root(simple_tree)
+    if debug: print("Root : %s " % root)
+    initial_optimum_values = [None]*len(simple_tree)
+    return max_weight_subset(root,simple_tree,initial_optimum_values)
+
+
+def expect_optimum(pp,expectation):
+    try:
+        opt = optimum(pp)
+        assert(expectation == opt)
+        print("SUCCESS:plan another party!")
+        return 0
+    except AssertionError as e:
+        print("FAILURE:Expected [%d] but got [%d] " %(expectation, opt))
+        return 1
+
+def test():
+    """A test for the party problem questions."""
+    pp = PartyProblem(1,[1000],[])
+    expect_optimum(pp,1000)
     
-    if debug :print("max independent set weight: %d" % max_weight_subset(simple_tree))
+    pp= PartyProblem(2,[1,2], [(1,2)])
+    expect_optimum(pp,2)
+    
+    pp = PartyProblem(5,[1,5,3,7,5],[(5,4),(2,3),(4,2),(1,2)])
+    expect_optimum(pp,11)
 
 def main():
-    tree = PartyProblem.from_input().make_tree()
-    weight = max_weight_subset(tree)
-    print(weight)
+    pp = PartyProblem.from_input()
+    print(optimum(pp))
 
 if __name__ == "__main__":
     # This is to avoid stack overflow issues
     threading.Thread(target=main).start()
+
