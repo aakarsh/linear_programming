@@ -10,8 +10,8 @@
   idx
   (data nil)
   (parent nil)
-  (children nil)
-  (visited nil))
+  (children nil))
+
 
 (defun an/party-parse-file(in-file)
   "Parse input file into an instance of the party problem."
@@ -36,7 +36,6 @@
                        collect (vector v1 v2))
                  :edge-type 'undirected))
 
-
 (defun an/party-build-tree(party-problem)
   "Construct a tree for the party problem, return the array of
 nodes, with appropriate parent child relationships setup."
@@ -46,7 +45,6 @@ nodes, with appropriate parent child relationships setup."
          (size (an/party-problem-size pp))
          (graph (an/build-party-graph pp))
          (tree-nodes (an/vector:make size (lambda (i) (make-an/tree-node :idx i)))))
-
     (loop for w across weights
           for i  = 0 then (+ i 1)
           for node = (aref tree-nodes i )
@@ -137,14 +135,13 @@ nodes, with appropriate parent child relationships setup."
 
 (ert-deftest an/party-problem-test-01 ()
   (should (equal 1000
-                 (an/party-problem-optimum (concat an/party-dir "/tests/01"))
-                 )))
+                 (an/party-problem-optimum (concat an/party-dir "/tests/01")))))
 
 (ert-deftest an/party-problem-test-02 ()
   (should (equal 2 (an/party-problem-optimum (concat an/party-dir "/tests/02")) )))
 
 (ert-deftest an/party-problem-test-03 ()
   (should (equal 11
-                 (an/party-problem-optimum (concat  an/party-dir  "/tests/03" ))))
-  )
+                 (an/party-problem-optimum (concat  an/party-dir  "/tests/03" )))))
+
 
