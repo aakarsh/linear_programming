@@ -27,14 +27,12 @@
     p))
 
 
+
 (defun an/build-party-graph (pp)
   "Build a graph of the party problem."
   (an/graph:make 'adj-list
                  (an/party-problem-size pp)
-                 (loop for r in (an/party-problem-relations pp)
-                       for v1  = (- (aref r 0) 1)
-                       for v2  = (- (aref r 1) 1)
-                       collect (vector v1 v2))
+                 (an/relations:decrement (an/party-problem-relations pp))
                  :edge-type 'undirected))
 
 (defun an/party-build-tree(party-problem)
@@ -144,6 +142,6 @@ nodes, with appropriate parent child relationships setup."
 
 (ert-deftest an/party-problem-test-03 ()
   (should (equal 11
-                 (an/party-problem-optimum (concat  an/party-dir  "/tests/03" )))))
+                 (an/party-problem-optimum (concat  an/party-dir  "/tests/03" )) )))
 
 
