@@ -12,19 +12,20 @@
   (parent nil)
   (children nil))
 
-
 (defun an/party-parse-file(in-file)
   "Parse input file into an instance of the party problem."
   (let ((p (make-an/party-problem)))
-  (an/file:map-over-file
-   in-file    ;; input file
-   (lambda(i line) ;; line number and line
-     (cond
-      ((= i 0) (setf (an/party-problem-size p) (string-to-number line)))
-      ((= i 1) (setf (an/party-problem-weights p) (an/buffer:line-to-numbers line)))
-      ((> i 1) (setf (an/party-problem-relations p)
-                     (cons (an/buffer:line-to-numbers line) (an/party-problem-relations p)))))))
-  p))
+    (an/parse-over-file
+     in-file
+     (line,count) => (line,i) 
+     :first   (setf (an/party-problem-size p)
+                    (string-to-number line))
+     :second  (setf (an/party-problem-weights p)
+                    (an/buffer:line-to-numbers line))
+     :rest    (setf (an/party-problem-relations p)
+                    (cons (an/buffer:line-to-numbers line) (an/party-problem-relations p))))
+    p))
+
 
 (defun an/build-party-graph (pp)
   "Build a graph of the party problem."
@@ -136,7 +137,7 @@ nodes, with appropriate parent child relationships setup."
 
 (ert-deftest an/party-problem-test-01 ()
   (should (equal 1000
-                 (an/party-problem-optimum (concat an/party-dir "/tests/01")))))
+                 (an/party-problem-optimum (concat an/party-dir "/tests/01")) )))
 
 (ert-deftest an/party-problem-test-02 ()
   (should (equal 2 (an/party-problem-optimum (concat an/party-dir "/tests/02")) )))
