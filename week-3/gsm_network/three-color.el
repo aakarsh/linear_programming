@@ -26,7 +26,7 @@
 ;;    case x_i1 = 1 :=> x_j1 = 0 [ color(v_j) != 1 ]
 ;;    case x_i2 = 1 :=> x_j2 = 0 [ color(v_j) != 2 ]
 ;;    case x_i3 = 1 :=  x_j3 = 0 [ color(v_j) != 3 ]
-;; 
+;;
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
@@ -55,9 +55,9 @@
 a sat-solver"
   (an/graph:make 'adj-list
                  (an/3c-num-vertices 3c)
-                 (an/relations:decrement (an/3c-relations gsm))
+                 (an/relations:decrement (an/3c-relations 3c))
                  :edge-type 'undirected))
-;; 
+
 ;;(setf 3c1 (an/3c-parse-file "tests/01"))
 ;;(setf 3c2 (an/3c-parse-file "tests/02"))
 ;;(an/3c-graph-build 3c1)
