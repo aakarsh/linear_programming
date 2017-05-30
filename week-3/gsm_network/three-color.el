@@ -86,8 +86,8 @@
 ;;    SAT_Products= {..}
 ;;
 ;;    for every edge (i,j) in E(G):
-;;        SAT_Products += (x_i1+x_j1)
-;;        SAT_Products += (not(x_i1) + not(x_j1))
+;;        SAT_Products += (x_i1 + x_j1)
+;;        SAT_Products += (not(x_i1) + not(x_j1)
 ;;
 ;;    Converting from variable form into actual output.
 ;;
@@ -190,11 +190,21 @@ represented by a pair."
     (setf clauses (append (an/vertex-has-exclusive-coloring num-vertices) clauses))
     clauses))
 
-
 (defun an/edge-clause (v1 v2)
+  "Create clauses that ensure neighbouring vertices do not get
+the same color."
   (let ((clauses nil))
-    
-    ))
+    (loop for c from 0 below an/3c-num-colors do          
+          (push (list
+                 (vector nil v1 c )
+                 (vector nil v2 c))
+                clauses)
+          (push (list
+                 (vector t v1 c )
+                 (vector t v2 c))
+                clauses))
+    clauses))
+
 
 (defun an/edge-clauses (src-graph)
   (let ((clauses nil))
@@ -205,8 +215,8 @@ represented by a pair."
                 for j = (an/graph:node-number neighbour)
                 ;; (i,j) represents the graph node
                 do
-                
-                ))
+                (setf clauses (append (an/edge-clauses i j) clauses))))
     clauses))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
