@@ -79,11 +79,32 @@
 ;;    => (x_i1 + x_j1).(not(x_i1) + not(x_j1))
 ;;
 ;;    SAT_Products= {..}
+;; 
 ;;    for every edge (i,j) in E(G):
 ;;        SAT_Products += (x_i1+x_j1)
 ;;        SAT_Products += (not(x_i1) + not(x_j1))
 ;;
+;;    Converting from variable form into actual output.
+;;
+;;   Output format :
+;;        <number of clauses>  <number of variables>
+;;        +/- variable_1  +/ var_2 ...... +/- var_k 0
+;;        Where variables are labeled starting from 1 and ending at k.
+;;
+;;  Variable Numbering:
+;;
+;;         x_ij form the set of all introduced labels where i \in
+;;         (1..|V|) and j \in (1,2,3) Thus total number of variables
+;;         introduced will be 3*|V|
+;;
+;;         x_11 -> 1, x_12 -> 2, x_13 -> 3
+;;         x_21 -> 4, x_22 -> 5, x_23 -> 6
+;;         x_31 -> 7, x_32 -. 8, x_33 -> 7
+;;
+;;         ...x_ij -> i*3+j+1 assuming i in [0, |V|-1[ and j in [0, 2]
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
@@ -114,5 +135,16 @@ a sat-solver"
                  (an/3c-num-vertices 3c)
                  (an/relations:decrement (an/3c-relations 3c))
                  :edge-type 'undirected))
+
+(defun an/vertex-clauses(num-vertices)
+  "Return a list of clause vectors where each variable is
+represented by a pair."
+  (let ((clauses '()))    
+    (loop for i from 0 below num-vertices
+          do
+          
+          )
+    ))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
