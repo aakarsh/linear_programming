@@ -1,5 +1,5 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Here we try to reduce graph three coloring problem to an instance
+;; Here we try to reduce graph three-coloring problem to an instance
 ;; of SAT. Such that finding a satisfying assignment will also provide
 ;; a coloring for a graph G with vertices V and edges E. G(V,E) being
 ;; the input graph.
@@ -49,7 +49,7 @@
 ;;    "str :(%s,%s,%s) : coloring: %s " (oddp i) (oddp j) (oddp k)
 ;;        (an/exclusive-coloring  (oddp i) (oddp j) (oddp k))))))
 ;;
-;; 3. No neighboring vertices can have the same-color
+;; 3. No neighboring vertices can have the same color
 ;;
 ;;    v_i and v_j are neighbours and (i,j) \in E
 ;;    then: [color(v_i) != color(v_j)]
@@ -63,14 +63,26 @@
 ;;
 ;;    This property is will depend on the actual structure of the
 ;;    graph and will require the addition of a clause:
+;;
 ;;    \forevery edge e \in E(G):
 ;;
 ;;    [== x_i1 x_j1 ]
 ;;      => (x_i1 and x_j1) or (not(x_i1) and not(x_j1))
 ;;
-;;    [!= x_i1 x_j1]
-;;      => not[[x_i1 and x_j1] and not[x_i1] and not[x_j1]]
-;;      => 
+;;    [!= x_i1 x_j1] XOR
+;;
+;;    => not [== x_i1 x_j1 ]
+;;    => not [[x_i1 and x_j1] or [not[x_i1] and not[x_j1]]]
+;;    => not[x_i1 and x_j1] . not[  not[x_i1] and not[x_j1] ]
+;;    => [ not(x_i1) or not(x_j1) ] . [ x_i1 or x_j1 ]
+;;    => [ not(x_i1) + not(x_j1) ] . [ x_i1 + x_j1 ]
+;;    => (x_i1 + x_j1).(not(x_i1) + not(x_j1))
+;;
+;;    SAT_Products= {..}
+;;    for every edge (i,j) in E(G):
+;;        SAT_Products += (x_i1+x_j1)
+;;        SAT_Products += (not(x_i1) + not(x_j1))
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (require 'an-lib)
 (require 'dash)
@@ -102,3 +114,5 @@ a sat-solver"
                  (an/3c-num-vertices 3c)
                  (an/relations:decrement (an/3c-relations 3c))
                  :edge-type 'undirected))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
