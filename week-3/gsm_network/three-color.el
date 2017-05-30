@@ -189,4 +189,24 @@ represented by a pair."
     (push (an/vertex-has-at-least-one-color num-vertices) clauses)
     (setf clauses (append (an/vertex-has-exclusive-coloring num-vertices) clauses))
     clauses))
+
+
+(defun an/edge-clause (v1 v2)
+  (let ((clauses nil))
+    
+    ))
+
+(defun an/edge-clauses (src-graph)
+  (let ((clauses nil))
+    (loop for node in (an/graph-nodes  g)
+          for i = (an/graph:node-number node)
+          do
+          (loop for neighbour in (an/graph-neighbours src-graph node)
+                for j = (an/graph:node-number neighbour)
+                ;; (i,j) represents the graph node
+                do
+                
+                ))
+    clauses))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
