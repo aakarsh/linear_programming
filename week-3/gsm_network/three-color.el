@@ -16,7 +16,9 @@
 ;; 2. Every vertex can have only a single color. This will mean that :
 ;;
 ;;    The satisfying state that at least one color is assigned to a
-;;    vertex v_i: [x_i1 or x_i2 or x_i3]
+;;    vertex v_i:
+;;
+;;        [x_i1 or x_i2 or x_i3] => [x_i1 + x_i2 + x_i3]
 ;;
 ;;    A vertex can not be assigned two different colors :
 ;;
@@ -27,7 +29,10 @@
 ;;    [and not[x_i1 and x_i3]
 ;;         not[x_i1 and x_i2]
 ;;         not[x_i2 and x_i3]] =>
+;;
 ;;    [and [not(x_i1) or not(x_i3)] [not(x_i1) or not(x_i2)] [not(x_i2) or not(x_i3)]
+;;    (not(x_i1) + not(x_i3)) . (not(x_i1) + not(x_i2)).  (not(x_i2) + not(x_i3))
+;;
 ;;
 ;; (defun an/exclusive-coloring(a b c)
 ;;   (and (not (and a b))
@@ -79,7 +84,7 @@
 ;;    => (x_i1 + x_j1).(not(x_i1) + not(x_j1))
 ;;
 ;;    SAT_Products= {..}
-;; 
+;;
 ;;    for every edge (i,j) in E(G):
 ;;        SAT_Products += (x_i1+x_j1)
 ;;        SAT_Products += (not(x_i1) + not(x_j1))
@@ -109,6 +114,8 @@
 (require 'dash)
 (require 'cl)
 
+(defvar an/3c-num-colors 3)
+
 (defstruct an/3c
   (num-vertices 0)
   (num-edges 0)
@@ -136,15 +143,50 @@ a sat-solver"
                  (an/relations:decrement (an/3c-relations 3c))
                  :edge-type 'undirected))
 
+(defun an/vertex-has-at-least-one-color (num-vertices)
+  "Returns a list of clauses per vertex, each clause will
+represent the fact that the vertex v_i has at least one color j
+\in [0,1,2]."
+  (let ((clauses '()))
+    (loop
+     for at-least-one-color = '()
+     for i from 0 below num-vertices do
+     (loop for  j from 0 below an/3c-num-colors do
+           (push (vector nil i j) at-least-one-color))
+     (push at-least-one-color clauses))
+    clauses))
+
+(defun an/combinatorial-pairs (n)
+  "Generates a set of pairs of $n$ numbers."
+  (let ((pairs '()))
+    (loop for i from 0 below n  do
+          (setf pairs
+                (append
+                 (loop for j from (+ 1 i) below n
+                       collect (vector  i j))
+                                pairs)))
+    pairs))
+
+(defun an/vertex-has-exclusive-coloring (num-vertices)
+  "Returns a list of clauses which ensure that a it does not get
+assigned more than a single color. Negation of a clause variable
+is represented by 'not type."
+  (let ((clauses '()))
+    (loop for i from 0 below num-vertices do
+          (loop for p in (an/combinatorial-pairs an/3c-num-colors)
+                for p1 = (aref p 0)
+                for p2 = (aref p 1)
+                do
+                (push (list (vector t i p1 )
+                            (vector t i p2))
+                      clauses)))
+    clauses))
+
 (defun an/vertex-clauses(num-vertices)
   "Return a list of clause vectors where each variable is
 represented by a pair."
-  (let ((clauses '()))    
-    (loop for i from 0 below num-vertices
-          do
-          
-          )
-    ))
-
-
+  (let ((clauses nil))
+    (push (an/vertex-has-at-least-one-color num-vertices) clauses)
+    (setf clauses (append (an/vertex-has-exclusive-coloring num-vertices) clauses))
+    clauses))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
