@@ -212,6 +212,7 @@ the same color."
           (loop for neighbour in (an/graph-neighbours src-graph node)
                 for j = (an/graph:node-number neighbour)
                 do
+                (message "edge %d->%d" i j)
                 (setf clauses (append (an/edge-clause i j) clauses))))
     clauses))
 
@@ -220,17 +221,24 @@ the same color."
   (let* ((parsed (an/3c-parse-file input-file))
          (graph  (an/3c-graph-build  parsed))
          (num-vertices (length (an/graph-nodes graph)))
+         (num-clauses 0)
          (clauses '())
+         (output-clauses '())
          (num-variables (* 3 num-vertices)))
     (setf clauses (append (an/vertex-clauses num-vertices) clauses))
     (setf clauses (append (an/edge-clauses graph) clauses))
-    (an/print-output-clauses  (length clauses)  num-variables(an/output-clauses clauses))))
+    (setf num-clauses (length clauses))
+    (setf output-clauses (an/output-clauses clauses))
+    (an/print-output-clauses  num-clauses  num-variables output-clauses)    
+    (an/run-minisat-clauses num-clauses num-variables output-clauses)))
+
 
 (defun an/element-to-integer (elem)
   (let* ((compliment (aref elem 0 ))
         (i           (aref elem 1))
         (j           (aref elem 2))
         (idx 0))
+    ;; TODO this encoding is not correct.
     (setf idx (+   (* 3 i) j 1))
     (if compliment  (* -1 idx)  idx)))
 
@@ -239,14 +247,25 @@ the same color."
   (loop for clause in clauses
         collect
         (loop for elem in clause
-              collect (format "%2d" (an/element-to-integer elem)))))
+              collect (format "%3d" (an/element-to-integer elem)))))
 
 (defun an/print-output-clauses (num-clauses num-variables  out-clauses)
   "Prints out output clauses in standard format"
-  (message "%2d %2d" num-clauses num-variables)
+  (message "%3d %3d" num-clauses num-variables)
   (loop for clause in out-clauses do
-        (message "%s 0"  (loop for elem in clause
-                        concat (concat elem " ")))))
+        (message "%s %3d"  (loop for elem in clause
+                                 concat (concat elem " "))
+                 0)))
+
+(defun an/run-minisat-clauses (num-clauses num-variables out-clauses)
+  (with-temp-buffer
+    (insert (format  "p cnf %3d %3d"  num-variables num-clauses  ))
+    (loop for clause in out-clauses do
+          (insert  (format "%s %3d"  (loop for elem in clause
+                                           concat (concat elem " "))
+                           0)))
+    (shell-command-on-region (point-min) (point-max) "minisat")))
+
 
 (an/three-color-to-clauses "tests/01")
 
