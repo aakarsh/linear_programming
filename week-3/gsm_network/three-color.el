@@ -109,7 +109,6 @@
 ;;         ...x_ij -> i*3+j+1 assuming i in [0, |V|-1[ and j in [0, 2]
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
@@ -154,7 +153,7 @@ represent the fact that the vertex v_i has at least one color j
      (loop for  j from 0 below an/3c-num-colors do
            (push (vector nil i j) at-least-one-color))
      (push at-least-one-color clauses))
-    clauses))
+    (-flatten  clauses)))
 
 (defun an/combinatorial-pairs (n)
   "Generates a set of pairs of $n$ numbers."
@@ -194,7 +193,7 @@ represented by a pair."
   "Create clauses that ensure neighbouring vertices do not get
 the same color."
   (let ((clauses nil))
-    (loop for c from 0 below an/3c-num-colors do          
+    (loop for c from 0 below an/3c-num-colors do
           (push (list
                  (vector nil v1 c )
                  (vector nil v2 c))
@@ -205,18 +204,51 @@ the same color."
                 clauses))
     clauses))
 
-
 (defun an/edge-clauses (src-graph)
   (let ((clauses nil))
-    (loop for node in (an/graph-nodes  g)
+    (loop for node in (an/graph-nodes  src-graph)
           for i = (an/graph:node-number node)
           do
           (loop for neighbour in (an/graph-neighbours src-graph node)
                 for j = (an/graph:node-number neighbour)
-                ;; (i,j) represents the graph node
                 do
-                (setf clauses (append (an/edge-clauses i j) clauses))))
+                (setf clauses (append (an/edge-clause i j) clauses))))
     clauses))
 
+(defun an/three-color-to-clauses (input-file)
+  "Convert input file to an instance of SAT"
+  (let* ((parsed (an/3c-parse-file input-file))
+         (graph  (an/3c-graph-build  parsed))
+         (num-vertices (length (an/graph-nodes graph)))
+         (clauses '())
+         (num-variables (* 3 num-vertices)))
+    (setf clauses (append (an/vertex-clauses num-vertices) clauses))
+    (setf clauses (append (an/edge-clauses graph) clauses))
+    (an/print-output-clauses  (length clauses)  num-variables(an/output-clauses clauses))))
+
+(defun an/element-to-integer (elem)
+  (let* ((compliment (aref elem 0 ))
+        (i           (aref elem 1))
+        (j           (aref elem 2))
+        (idx 0))
+    (setf idx (+   (* 3 i) j 1))
+    (if compliment  (* -1 idx)  idx)))
+
+(defun an/output-clauses (clauses)
+  "Convert output into format recognizable by a the sat solver."
+  (loop for clause in clauses
+        collect
+        (loop for elem in clause
+              collect (format "%d" (an/element-to-integer elem)))))
+
+(defun an/print-output-clauses (num-clauses num-variables  out-clauses)
+  "Prints out output clauses in standard format"
+  (message "%d %d" num-clauses num-variables)
+  (loop for clause in out-clauses do
+        (message "%s 0"  (loop for elem in clause
+                        concat (concat elem " ")))))
+
+
+(an/three-color-to-clauses "tests/01")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
