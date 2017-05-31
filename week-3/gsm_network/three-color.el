@@ -31,6 +31,7 @@
 ;;         not[x_i2 and x_i3]] =>
 ;;
 ;;    [and [not(x_i1) or not(x_i3)] [not(x_i1) or not(x_i2)] [not(x_i2) or not(x_i3)]
+;;
 ;;    (not(x_i1) + not(x_i3)) . (not(x_i1) + not(x_i2)).  (not(x_i2) + not(x_i3))
 ;;
 ;;
@@ -85,9 +86,10 @@
 ;;
 ;;    SAT_Products= {..}
 ;;
-;;    for every edge (i,j) in E(G):
-;;        SAT_Products += (x_i1 + x_j1)
-;;        SAT_Products += (not(x_i1) + not(x_j1)
+;;    for every edge (i,j) \in E(G) :
+;;           for every color k \in {1,2,3} :
+;;               SAT_Products += (x_ik + x_jk)
+;;               SAT_Products += (not(x_ik) + not(x_jk)
 ;;
 ;;    Converting from variable form into actual output.
 ;;
@@ -148,12 +150,12 @@ represent the fact that the vertex v_i has at least one color j
 \in [0,1,2]."
   (let ((clauses '()))
     (loop
-     for at-least-one-color = '()
      for i from 0 below num-vertices do
-     (loop for  j from 0 below an/3c-num-colors do
-           (push (vector nil i j) at-least-one-color))
-     (push at-least-one-color clauses))
-    (-flatten  clauses)))
+     (let ((at-least-one-color '()))
+       (loop for  j from 0 below an/3c-num-colors do
+             (push (vector nil i j) at-least-one-color))       
+       (push at-least-one-color clauses)))
+    clauses))
 
 (defun an/combinatorial-pairs (n)
   "Generates a set of pairs of $n$ numbers."
@@ -185,7 +187,7 @@ is represented by 'not type."
   "Return a list of clause vectors where each variable is
 represented by a pair."
   (let ((clauses nil))
-    (push (an/vertex-has-at-least-one-color num-vertices) clauses)
+    (setf clauses (append (an/vertex-has-at-least-one-color num-vertices) clauses))
     (setf clauses (append (an/vertex-has-exclusive-coloring num-vertices) clauses))
     clauses))
 
@@ -194,10 +196,6 @@ represented by a pair."
 the same color."
   (let ((clauses nil))
     (loop for c from 0 below an/3c-num-colors do
-          (push (list
-                 (vector nil v1 c )
-                 (vector nil v2 c))
-                clauses)
           (push (list
                  (vector t v1 c )
                  (vector t v2 c))
@@ -212,7 +210,10 @@ the same color."
           (loop for neighbour in (an/graph-neighbours src-graph node)
                 for j = (an/graph:node-number neighbour)
                 do
-                (message "edge %d->%d" i j)
+                ;; Am I adding too many clauses because the graph is
+                ;; being treated as doubly neighboured But the
+                ;; redundant clauses should not affect satisfiablity.
+
                 (setf clauses (append (an/edge-clause i j) clauses))))
     clauses))
 
@@ -224,22 +225,52 @@ the same color."
          (num-clauses 0)
          (clauses '())
          (output-clauses '())
+         (minisat-output '())
          (num-variables (* 3 num-vertices)))
+
     (setf clauses (append (an/vertex-clauses num-vertices) clauses))
     (setf clauses (append (an/edge-clauses graph) clauses))
+    (message "Clauses:%s" clauses)
     (setf num-clauses (length clauses))
     (setf output-clauses (an/output-clauses clauses))
     (an/print-output-clauses  num-clauses  num-variables output-clauses)    
-    (an/run-minisat-clauses num-clauses num-variables output-clauses)))
+    (setf minisat-output (an/run-minisat-clauses num-clauses num-variables output-clauses))
+    
+    ;; (if (not (an/minisat-satisfiable minisat-output))
+    ;;     (error  "graph is not three colorable.")
+    ;;   (an/graph-three-coloring graph minisat-output))
+    
+    ))
 
+(defun an/graph-three-coloring (graph minisat-output)
+  (let ((nodes (an/graph-nodes graph)))
+    (loop for clause in (an/minisat-clauses  minisat-output)
+          for is-true = (aref clause 0 )
+          for i-val = (aref clause 1)
+          for j-val = (aref clause 2) do
+          (if is-true
+              (setf (an/graph:node-color (aref nodes i-val)) j-val))
+          )))
 
-(defun an/element-to-integer (elem)
+(defun an/element-decode (sat-element)
+  "Converts back from a sat output to a decoded clause  "
+  (let* ((decoded (make-vector 3 nil))
+        (int-value (abs sat-element))
+        (j-value  (-  (% int-value 10) 1))
+        (i-value  (-  (/ int-value 10 ) 1 )))
+    (aset decoded 0 (< sat-element 0))
+    (aset decoded 1 i-value)
+    (aset decoded 2 j-value)    
+    decoded))
+
+(defun an/element-encode (elem)
+  "Encode element to a minisat element number"
   (let* ((compliment (aref elem 0 ))
         (i           (aref elem 1))
         (j           (aref elem 2))
-        (idx 0))
-    ;; TODO this encoding is not correct.
-    (setf idx (+   (* 3 i) j 1))
+        (idx 0))    
+    ;; TODO: Is this encoding correct ??
+    (setf idx (+   (* 10 (+  i 1)) j 1))
     (if compliment  (* -1 idx)  idx)))
 
 (defun an/output-clauses (clauses)
@@ -247,7 +278,7 @@ the same color."
   (loop for clause in clauses
         collect
         (loop for elem in clause
-              collect (format "%3d" (an/element-to-integer elem)))))
+              collect (format "%3d" (an/element-encode elem)))))
 
 (defun an/print-output-clauses (num-clauses num-variables  out-clauses)
   "Prints out output clauses in standard format"
@@ -258,15 +289,41 @@ the same color."
                  0)))
 
 (defun an/run-minisat-clauses (num-clauses num-variables out-clauses)
-  (with-temp-buffer
-    (insert (format  "p cnf %3d %3d"  num-variables num-clauses  ))
-    (loop for clause in out-clauses do
-          (insert  (format "%s %3d"  (loop for elem in clause
-                                           concat (concat elem " "))
-                           0)))
-    (shell-command-on-region (point-min) (point-max) "minisat")))
+  (with-current-buffer (get-buffer-create "three-color.in")
+   (an/buffer:clear)
+   (insert (format  "p cnf %3d %3d\n"  num-clauses num-variables))
+   (loop for clause in out-clauses do
+         (insert  (format "%s %3d\n"
+                          (loop for elem in clause concat (concat elem " "))
+                          0)))
+   (write-file "/tmp/three-color.in" nil)
+   (shell-command "minisat /tmp/three-color.in /tmp/three-color.out ")
+   
+   (an/minisat-parse-output "/tmp/three-color.out")))
+
+(defun an/minisat-satisfiable (instance)
+  (aref instance 0))
+
+(defun an/minisat-clauses (instance)
+  (aref instance 1))
+
+(defun an/minisat-parse-output (input-file)
+  (let ((satisfiable nil)
+        (clauses '()))    
+    (an/parse-over-file
+     input-file
+     (line,count) => (l,i)
+     :first
+     (if (equal "SAT" l)
+         (setf satisfiable t)
+       (message "Could not satisfy the conditions "))     
+     :second   
+     (setf clauses (mapcar 'an/element-decode (an/buffer:line-to-numbers l))))    
+    (vector satisfiable clauses )))
+
 
 
 (an/three-color-to-clauses "tests/01")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
