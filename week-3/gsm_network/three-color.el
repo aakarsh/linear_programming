@@ -206,7 +206,7 @@ the same color."
 
 (defun an/edge-clauses (src-graph)
   (let ((clauses nil))
-    (loop for node in (an/graph-nodes  src-graph)
+    (loop for node across (an/graph-nodes  src-graph)
           for i = (an/graph:node-number node)
           do
           (loop for neighbour in (an/graph-neighbours src-graph node)
@@ -239,15 +239,14 @@ the same color."
   (loop for clause in clauses
         collect
         (loop for elem in clause
-              collect (format "%d" (an/element-to-integer elem)))))
+              collect (format "%2d" (an/element-to-integer elem)))))
 
 (defun an/print-output-clauses (num-clauses num-variables  out-clauses)
   "Prints out output clauses in standard format"
-  (message "%d %d" num-clauses num-variables)
+  (message "%2d %2d" num-clauses num-variables)
   (loop for clause in out-clauses do
         (message "%s 0"  (loop for elem in clause
                         concat (concat elem " ")))))
-
 
 (an/three-color-to-clauses "tests/01")
 
