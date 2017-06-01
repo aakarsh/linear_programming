@@ -56,6 +56,7 @@
 ;;
 ;;    not(x_ki) + not(x_{k+1}j): if (v_i,v_j) \not \in E(G)
 ;;
+
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
@@ -79,7 +80,6 @@
            (cons (an/buffer:line-to-numbers l) (an/hm-problem-relations p))))
     p))
 
-
 (defun an/hm-problem-graph-build(hm-problem)
   "Create a graph which we will try to three-color using a
 sat-solver"
@@ -98,8 +98,55 @@ graph G"
         (num-edges    (an/hm-problem-num-edges parsed))
         (input-graph   (an/hm-problem-graph-build parsed))
         (clauses '()))
-    
     ))
+
+
+(defstruct an/hm-sat-variable
+  (compliment nil)
+  (position nil)
+  (vertex nil))
+
+(defun an/hm-sat-variable-dispaly (v)
+  (format  "x%s_{%d,%d}"
+           (if (an/hm-sat-variable-compliment v) "\\'" "")           
+           (an/hm-sat-variable-position v)
+           (an/hm-sat-variable-vertex v)))
+
+(defstruct an/hm-clause
+  (variables '()))
+
+(defun an/hm-clause-display (c)
+  (loop for v in (an/hm-clause-variables c)
+        for append = nil then t
+        concat (concat (if append " + " "" )
+                       (an/hm-sat-variable-dispaly v))))
+
+(defun an/hm-vertex-at-least-once (j num-vertices)
+  "Ensure that vertex j appears in at least one position."
+  (let ((v-clause (make-an/hm-clause) ))
+    (setf (an/hm-clause-variables v-clause)          
+          (loop for position from 0 below num-vertices
+                collect (make-an/hm-sat-variable
+                         :compliment nil
+                         :position position
+                         :vertex j)))
+    v-clause))
+
+(defun an/hm-vertices-at-least-once (num-vertices)
+  "Generates the conitions that every vertex will appear at lest
+one position in the hamiltonian path.(AtLeastOnce)"
+  (loop for vertex from 0 below num-vertices
+        collect (an/hm-vertex-at-least-once vertex num-vertices)))
+
+(defun an/hm-vertex-at-most-once (num-vertices)
+  
+  )
+
+(mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
+
+
+
+
 
 (an/hm-problem-to-clauses "tests/02")
 
