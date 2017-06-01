@@ -254,10 +254,7 @@ the same color."
 
 (defun an/element-decode (sat-element)
   "Converts back from a sat output to a decoded clause  "
-  (let* ((decoded (make-vector 3 nil))
-        (int-value (abs sat-element))
-        (j-value  (-  (% int-value 10) 1))
-        (i-value  (-  (/ int-value 10 ) 1 )))
+  (let* (j-value  (-  (% int-value 10) 1))
     (aset decoded 0 (< sat-element 0))
     (aset decoded 1 i-value)
     (aset decoded 2 j-value)    
