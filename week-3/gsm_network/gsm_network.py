@@ -73,17 +73,20 @@ assigned exactly one color."""
 
         # flatten all vertex constraints into single level
         clauses = [inner_clause for outer in clauses for inner_clause in outer]
-        return clauses;
-
+        return clauses
     
     @staticmethod
     def edge_clauses(graph,num_colors):
         """Create edge clauses which enforce the fact that neighbours cannot have the same color"""
         clauses = []
-        for vertex_idx in range(0,graph.num_vertices):
-            pass
-            #if(vertex_idx.
+        for c in range(0,num_colors):
+            for vertex_idx in range(0,graph.num_vertices):
+                for neightbour  in graph.neighbours(vertex_idx):
+                    clauses.append([Clause(True, vertex_idx, c),
+                                   Clause(True, neightbour, c)])
 
+        # flatten it again     
+        clauses = [inner_clause for outer in clauses for inner_clause in outer]
         return clauses
 
 
@@ -93,8 +96,9 @@ def simple_test():
     g = Gsm(3,3,[[1,2],[2,3],[1,3]])
     graph  = Graph(g.n,g.n,g.relations)
     clauses = []
-    Clause.vertex_clauses(graph,3)
-    print(graph)
+    clauses.append(Clause.vertex_clauses(graph,3))
+    clauses.append(Clause.edge_clauses(graph,3))
+    print(clauses)
     print("===End Simple Test===")
     return graph
 
