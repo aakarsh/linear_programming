@@ -56,10 +56,14 @@
 ;;
 ;;    not(x_ki) + not(x_{k+1}j): if (v_i,v_j) \not \in E(G)
 ;;
-
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
+
+(defstruct an/sat-variable
+  (compliment nil)
+  (position nil)
+  (vertex nil))
 
 (defstruct an/hm-problem
   (num-vertices 0)
@@ -101,16 +105,12 @@ graph G"
     ))
 
 
-(defstruct an/hm-sat-variable
-  (compliment nil)
-  (position nil)
-  (vertex nil))
 
-(defun an/hm-sat-variable-dispaly (v)
+(defun an/sat-variable-dispaly (v)
   (format  "x%s_{%d,%d}"
-           (if (an/hm-sat-variable-compliment v) "\\'" "")           
-           (an/hm-sat-variable-position v)
-           (an/hm-sat-variable-vertex v)))
+           (if (an/sat-variable-compliment v) "'" "")           
+           (an/sat-variable-position v)
+           (an/sat-variable-vertex v)))
 
 (defstruct an/hm-clause
   (variables '()))
@@ -119,14 +119,14 @@ graph G"
   (loop for v in (an/hm-clause-variables c)
         for append = nil then t
         concat (concat (if append " + " "" )
-                       (an/hm-sat-variable-dispaly v))))
+                       (an/sat-variable-dispaly v))))
 
 (defun an/hm-vertex-at-least-once (j num-vertices)
   "Ensure that vertex j appears in at least one position."
   (let ((v-clause (make-an/hm-clause) ))
     (setf (an/hm-clause-variables v-clause)          
           (loop for position from 0 below num-vertices
-                collect (make-an/hm-sat-variable
+                collect (make-an/sat-variable
                          :compliment nil
                          :position position
                          :vertex j)))
@@ -138,11 +138,45 @@ one position in the hamiltonian path.(AtLeastOnce)"
   (loop for vertex from 0 below num-vertices
         collect (an/hm-vertex-at-least-once vertex num-vertices)))
 
-(defun an/hm-vertex-at-most-once (num-vertices)
-  
+(defun an/hm-vertex-at-most-once (j num-vertices)
+  "For vertex j generates constraints that it does not exist more than once in the path by taking all pairs of positions and making sure that 
+vertex that only one of those positions is true "
+  (loop for (i k) in  (an/iter:combinations num-vertices)
+        collect
+        (make-an/hm-clause
+         :variables
+         (list
+          (make-an/sat-variable :compliment t :vertex j :position i)
+          (make-an/sat-variable :compliment t :vertex j :position k)))))
+
+(defun an/hm-vertices-at-most-once (num-vertices)
+  "Generates constraints that a vertex cannot occur more than
+  once in the path (AtMostOnce) "
+  (-flatten
+   (loop for j from 0 below num-vertices
+         collect (an/hm-vertex-at-most-once j num-vertices))))
+
+(defun an/hm-no-empty-positions (num-vertices)
+  "Ensure that every position is occupied by at least once
+vertex (NoEmptyPosition)."
+  (loop
+   for position from 0 below num-vertices
+   collect
+   (make-an/hm-clause
+    :variables
+    (loop for vertex from 0 below num-vertices
+          collect
+          (make-an/sat-variable
+           :vertex vertex :position position)))))
+
+(defun an/hm-vertex-no-simultaneous-positions (position num-vertices)
+  ""
   )
 
+
 (mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
+(mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
+(mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
 
 
 
