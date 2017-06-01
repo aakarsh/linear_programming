@@ -192,9 +192,11 @@ assigned exactly one color"""
         clauses = []
         for c in range(0,num_colors):
             for vertex_idx in range(0,graph.num_vertices):
-                for neightbour in graph.neighbours(vertex_idx):                    
-                    clauses.append([ClauseVariable(True, vertex_idx, c),
-                                    ClauseVariable(True, neightbour, c)])
+                for neighbour in graph.neighbours(vertex_idx):
+                    
+                    if vertex_idx < neighbour: # to prevent double counting in undirected graphs
+                        clauses.append([ClauseVariable(True, vertex_idx, c),
+                                        ClauseVariable(True, neighbour, c)])
         # flatten it again     
         #clauses = [inner_clause for outer in clauses for inner_clause in outer]
         return clauses
