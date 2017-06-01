@@ -206,4 +206,5 @@ if __name__ == "__main__":
     clauses = []
     clauses.extend(ClauseVariable.vertex_clauses(graph,num_colors))
     clauses.extend(ClauseVariable.edge_clauses(graph,num_colors))
-    ClauseVariable.print_clauses(10*graph.num_vertices+num_colors , clauses)    
+    #+1 for luck
+    ClauseVariable.print_clauses(10*graph.num_vertices+num_colors+1 , clauses)    
