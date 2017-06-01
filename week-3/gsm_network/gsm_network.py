@@ -78,8 +78,7 @@ class ClauseVariable:
         # TODO: assumes number of colors < 10
         retval = (10*(clause.vertex + 1))+ (clause.color + 1)
         if clause.compliment:
-            retval= -1*retval
-            
+            retval= -1*retval            
         return "%3d" % retval
     
     @staticmethod
@@ -91,6 +90,20 @@ class ClauseVariable:
         vertex = (int_value/10 - 1)
         color  = (int_value % 10) -1
         return ClauseVariable(compliment,vertex,color)
+
+
+    @staticmethod
+    def print_clauses(num_variables,clauses):
+        num_clauses = len(clauses)
+
+        print("%3d %3d" %(num_clauses,num_variables))
+        for clause in clauses:
+            s=""
+            for clause_variable in clause:
+                s += " %s" % ClauseVariable.minisat_encode(clause_variable)
+            print("%s 0"%s)
+
+    
 
     @staticmethod
     def vertex_clauses(graph,num_colors):
@@ -183,10 +196,14 @@ def simple_test():
     result = runner.check_sat()
     graph.color_by_clauses(result)
     graph.check_valid_colors()
-        print("===Finish Simple Test===")
+    print("===Finish Simple Test===")
     return graph
 
-if __name__ == "__main__":
-    g = Gsm.read()
-
-simple_test()
+if __name__ == "__main__":    
+    gsm = Gsm.read()
+    num_colors = 3
+    graph  = Graph(gsm.n,gsm.m,gsm.relations)
+    clauses = []
+    clauses.extend(ClauseVariable.vertex_clauses(graph,num_colors))
+    clauses.extend(ClauseVariable.edge_clauses(graph,num_colors))
+    ClauseVariable.print_clauses(10*graph.num_vertices+num_colors , clauses)    
