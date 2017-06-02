@@ -17,7 +17,7 @@
 ;; - {pi(i),pi(i+1)} \in G for i from {1..n-1}
 ;;
 ;; Reduction of Hamiltionian Path problem to SAT
-;; 
+;;
 ;; Given a graph G construct a CNF R(G) such that R(G) is satisfiable
 ;; iff G has a hamiltonian path.
 ;;
@@ -41,7 +41,7 @@
 ;;       for k in positions 1...n:
 ;;             if i!=j:
 ;;                  not(x_ij) + not(x_kj) ;; It can't be true that x_ij =1 and x_kj are both true.
-;; 
+;;
 ;; 3. Every position i in the path must be occupied: (NoEmptyPosition)
 ;;
 ;;    for i in postions 1...n:
@@ -55,7 +55,7 @@
 ;; in the path (AdjacencyPreserving)
 ;;
 ;;    not(x_ki) + not(x_{k+1}j): if (v_i,v_j) \not \in E(G)
-;;
+
 (require 'an-lib)
 (require 'dash)
 (require 'cl)
@@ -92,23 +92,12 @@ sat-solver"
                  (an/relations:decrement (an/hm-problem-relations hm-problem))
                  :edge-type 'undirected))
 
-(defun an/hm-problem-to-clauses(input-file)
-  "Parse a input file, build an undirected graph G and convert it
-into a set of SAT clauses such that if the SAT problem is
-satisfiable then there exists a hamiltonian cycle in the undirect
-graph G"
-  (let* ((parsed (an/hm-problem-parse-file input-file))
-        (num-vertices (an/hm-problem-num-vertices parsed))
-        (num-edges    (an/hm-problem-num-edges parsed))
-        (input-graph   (an/hm-problem-graph-build parsed))
-        (clauses '()))
-    ))
 
 
 
 (defun an/sat-variable-dispaly (v)
   (format  "x%s_{%d,%d}"
-           (if (an/sat-variable-compliment v) "'" "")           
+           (if (an/sat-variable-compliment v) "'" "")
            (an/sat-variable-position v)
            (an/sat-variable-vertex v)))
 
@@ -124,7 +113,7 @@ graph G"
 (defun an/hm-vertex-at-least-once (j num-vertices)
   "Ensure that vertex j appears in at least one position."
   (let ((v-clause (make-an/hm-clause) ))
-    (setf (an/hm-clause-variables v-clause)          
+    (setf (an/hm-clause-variables v-clause)
           (loop for position from 0 below num-vertices
                 collect (make-an/sat-variable
                          :compliment nil
@@ -139,7 +128,7 @@ one position in the hamiltonian path.(AtLeastOnce)"
         collect (an/hm-vertex-at-least-once vertex num-vertices)))
 
 (defun an/hm-vertex-at-most-once (j num-vertices)
-  "For vertex j generates constraints that it does not exist more than once in the path by taking all pairs of positions and making sure that 
+  "For vertex j generates constraints that it does not exist more than once in the path by taking all pairs of positions and making sure that
 vertex that only one of those positions is true "
   (loop for (i k) in  (an/iter:combinations num-vertices)
         collect
@@ -169,17 +158,75 @@ vertex (NoEmptyPosition)."
           (make-an/sat-variable
            :vertex vertex :position position)))))
 
-(defun an/hm-vertex-no-simultaneous-positions (position num-vertices)
-  ""
-  )
+(defun an/hm-vertex-no-simultaneous-positions (p num-vertices)
+  "No two vertices j and k simultaneously occupy position p "
+  (loop for (j k) in (an/iter:combinations num-vertices)
+        collect
+        (make-an/hm-clause
+         :variables
+         (list
+          (make-an/sat-variable :compliment t :vertex j :position p)
+          (make-an/sat-variable :compliment t :vertex k :position p)))))
 
+(defun an/hm-vertices-no-simultaneous-positions (num-vertices)
+  "For each position make sure it does not get assigned to two
+different vertices by adding conditions for each vertex pair"
+  (-flatten
+   (loop for p from 0 below num-vertices
+         collect (an/hm-vertex-no-simultaneous-positions p num-vertices  ))))
+
+(defun an/hm-vertices-no-non-adjacent-vertices (graph)
+  "Ensure that every position has at least one vertex."
+  (let ((clauses '()))    
+    (an/graph-compliment graph)
+    (loop
+     with nodes = (an/graph-nodes graph)
+     with num-vertices = (length nodes)
+     for node across nodes
+     for node-number = (an/graph:node-number node)
+     do
+     (loop for non-neighbour in (an/graph-neighbours graph node)
+           for non-neighbour-node-number = (an/graph:node-number node)
+           do
+           ;; node non-neighbour are non-adjacent vertices.
+           (loop for pos from 0 below (-  num-vertices 1)
+                 for next-pos = (+ pos 1) do
+                 (push  (make-an/hm-clause
+                         :variables
+                         (list
+                          (make-an/sat-variable :position pos :vertex node-number)
+                          (make-an/sat-variable :position next-pos :vertex non-neighbour-node-number)))
+                        clauses))))    
+    ;; set it back
+    (an/graph-compliment graph)
+    clauses))
 
 (mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
 (mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
 (mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
+(mapcar 'an/hm-clause-display (an/hm-vertices-no-simultaneous-positions 3))
+
+(defun an/hm-problem-to-clauses(input-file)
+  "Parse a input file, build an undirected graph G and convert it
+into a set of SAT clauses such that if the SAT problem is
+satisfiable then there exists a hamiltonian cycle in the undirect
+graph G"
+  (let* ((parsed (an/hm-problem-parse-file input-file))
+        (num-vertices (an/hm-problem-num-vertices parsed))
+        (num-edges    (an/hm-problem-num-edges parsed))
+        (input-graph   (an/hm-problem-graph-build parsed))
+        (clauses '()))
 
 
+    (an/list:extend clauses  (an/hm-vertices-at-least-once num-vertices))
+    (an/list:extend clauses (an/hm-vertices-at-most-once num-vertices))
+    (an/list:extend clauses (an/hm-no-empty-positions num-vertices))
+    (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
+    
+    ;; Edge dependent
+    (an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
 
+    (mapcar 'an/hm-clause-display clauses)))
 
 
 (an/hm-problem-to-clauses "tests/02")
