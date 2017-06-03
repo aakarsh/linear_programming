@@ -58,7 +58,6 @@
 ;;
 ;;  Mapping clause variables x_ij to sat variable s_i. Since i varies
 ;;  from 0 to |V| and j also varies from 0 |V|
-;;
 
 (require 'an-lib)
 (require 'dash)
@@ -121,10 +120,11 @@ sat-solver"
                  :edge-type 'undirected))
 
 (defun an/sat-variable-dispaly (v)
-  (format  "x%s_{%d,%d}"
+  (format  "x%s_{v-%d,p-%d}"
            (if (an/sat-variable-compliment v) "'" "")
+           (an/sat-variable-vertex v)
            (an/sat-variable-position v)
-           (an/sat-variable-vertex v)))
+           ))
 
 (defstruct an/hm-clause
   (variables '()))
@@ -210,17 +210,20 @@ different vertices by adding conditions for each vertex pair"
      for node across nodes
      for node-number = (an/graph:node-number node)
      do
+     (message "node %d has non-neighbours %s"
+              node-number
+              (mapcar 'an/graph:node-number  (an/graph-neighbours graph node)))
      (loop for non-neighbour in (an/graph-neighbours graph node)
-           for non-neighbour-node-number = (an/graph:node-number node)
+           for non-neighbour-node-number = (an/graph:node-number non-neighbour)
+           if (not (equal node-number non-neighbour-node-number))
            do
-           ;; node non-neighbour are non-adjacent vertices.
-           (loop for pos from 0 below (-  num-vertices 1)
-                 for next-pos = (+ pos 1) do
+           ;; no non-neighbour are non-adjacent vertices.
+           (loop for pos from 0 below (-  num-vertices 1) do
                  (push  (make-an/hm-clause
                          :variables
                          (list
-                          (make-an/sat-variable :position pos :vertex node-number)
-                          (make-an/sat-variable :position next-pos :vertex non-neighbour-node-number)))
+                          (make-an/sat-variable  :compliment t :position pos       :vertex node-number)
+                          (make-an/sat-variable  :compliment t :position (+ pos 1) :vertex non-neighbour-node-number)))
                         clauses))))
     ;; set it back
     (an/graph-compliment graph)
@@ -231,12 +234,13 @@ different vertices by adding conditions for each vertex pair"
 into a set of SAT clauses such that if the SAT problem is
 satisfiable then there exists a hamiltonian cycle in the undirect
 graph G."
+  
   (let* ((parsed (an/hm-problem-parse-file input-file))
-        (num-vertices (an/hm-problem-num-vertices parsed))
-        (num-edges    (an/hm-problem-num-edges parsed))
-        (input-graph   (an/hm-problem-graph-build parsed))
-        (clauses '())
-        (output-clauses '()))
+         (num-vertices (an/hm-problem-num-vertices parsed))
+         (num-edges    (an/hm-problem-num-edges parsed))
+         (input-graph   (an/hm-problem-graph-build parsed))
+         (clauses '())
+         (output-clauses '()))
     
     (an/list:extend clauses  (an/hm-vertices-at-least-once num-vertices))
     (an/list:extend clauses (an/hm-vertices-at-most-once num-vertices))
@@ -244,58 +248,41 @@ graph G."
     (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
 
     ;; Edge dependent
-    ;;(an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
-    ;;
-    ;; Collect output clauses here
+
+    (setf edge-clasues (an/hm-vertices-no-non-adjacent-vertices input-graph))
+    
+    (loop for edge in edge-clasues
+          do          
+          (message "Edge: %s" (an/hm-clause-display edge)))
+    
+    (an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
+    ;; collect output clauses here
     (setf output-clauses
           (loop for c in clauses collect
                 (loop for v in (an/hm-clause-variables c)
                       collect (an/sat-variable-encode v num-vertices))))
     
     (setf minisat-output  (an/run-minisat-clauses output-clauses))
+    
     (if (an/minisat-satisfiable minisat-output)
         (an/hamilitonian-path-from-sat minisat-output num-vertices)
       nil)))
 
-
-
-;; Resulting Assignment 
 (defun an/hamilitonian-path-from-sat (minisat-output num-vertices)  
   "Computes the hamiltonian path from minisat assignment."
-  (let ((variables (an/minisat-clauses minisat-output)))
-    
+  (let ((variables (an/minisat-clauses minisat-output)))    
     (setf variables
           (loop for v in variables
                 if (> v 0)
                 collect (an/sat-variable-decode v num-vertices)))
-
     (sort variables (lambda (v1 v2)
                       (> (an/sat-variable-position v1)
-                         (an/sat-variable-position v2))))
-    
-    (mapcar (lambda (v)
-              (an/sat-variable-vertex v))
-            variables)))
+                         (an/sat-variable-position v2))))    
+    (mapcar
+     (lambda (v)
+       (+  (an/sat-variable-vertex v) 1))
+         variables)))
 
 
-(an/hm-problem-to-clauses "tests/01")
-(an/hm-problem-to-clauses "tests/02")
-
-;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
-;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
-;; (mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
-;; (mapcar 'an/hm-clause-display (an/hm-vertices-no-simultaneous-positions 3))
-
-;;; References
-;; [1] https://www.csie.ntu.edu.tw/~lyuu/complexity/2011/20111018.pdf
-;;
-;;
-;;; Misc
-;; Create a separate variable x_ij for each vertex 𝑖 and each position
-;; in the Hamiltonian path x_ij is true if vertex 𝑖 is at the position
-;; 𝑗 of Hamiltonian path. Think how to express all the restrictions in
-;; terms of these variables: all vertices must be on the path, each
-;; vertex must be visited exactly once, there is only one vertex on
-;; each position in the path, two successive vertices must be
-;; connected by an edge.
-
+;;(an/hm-problem-to-clauses "tests/01")
+;;(an/hm-problem-to-clauses "tests/02")
