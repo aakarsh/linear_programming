@@ -123,8 +123,7 @@ sat-solver"
   (format  "x%s_{v-%d,p-%d}"
            (if (an/sat-variable-compliment v) "'" "")
            (an/sat-variable-vertex v)
-           (an/sat-variable-position v)
-           ))
+           (an/sat-variable-position v)))
 
 (defstruct an/hm-clause
   (variables '()))
@@ -248,14 +247,10 @@ graph G."
     (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
 
     ;; Edge dependent
-
     (setf edge-clasues (an/hm-vertices-no-non-adjacent-vertices input-graph))
-    
-    (loop for edge in edge-clasues
-          do          
-          (message "Edge: %s" (an/hm-clause-display edge)))
-    
+        
     (an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
+    
     ;; collect output clauses here
     (setf output-clauses
           (loop for c in clauses collect
@@ -284,5 +279,5 @@ graph G."
          variables)))
 
 
-;;(an/hm-problem-to-clauses "tests/01")
-;;(an/hm-problem-to-clauses "tests/02")
+(an/hm-problem-to-clauses "tests/01")
+(an/hm-problem-to-clauses "tests/02")
