@@ -239,11 +239,10 @@ graph G."
         (output-clauses '()))
     
     (an/list:extend clauses  (an/hm-vertices-at-least-once num-vertices))
-
     (an/list:extend clauses (an/hm-vertices-at-most-once num-vertices))
     (an/list:extend clauses (an/hm-no-empty-positions num-vertices))
     (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
-    ;;
+
     ;; Edge dependent
     ;;(an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
     ;;
@@ -252,22 +251,41 @@ graph G."
           (loop for c in clauses collect
                 (loop for v in (an/hm-clause-variables c)
                       collect (an/sat-variable-encode v num-vertices))))
-
     
-    (an/run-minisat-clauses output-clauses)
-    
-    ))
+    (setf minisat-output  (an/run-minisat-clauses output-clauses))
+    (if (an/minisat-satisfiable minisat-output)
+        (an/hamilitonian-path-from-sat minisat-output num-vertices)
+      nil)))
 
-;;Resulting Assignment :
-;;[t [-1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 15 -16 -17 -18 -19 -20 -21 -22 -23 -24 25 -26 -27 -28 -29 -30 -31 -32 -33 -34 35 -36 -37 -38 -39 -40 -41 -42 -43 -44 45 -46 -47 -48 -49 -50 -51 -52 -53 -54 55 0]]
-;;
+
+
+;; Resulting Assignment 
+(defun an/hamilitonian-path-from-sat (minisat-output num-vertices)  
+  "Computes the hamiltonian path from minisat assignment."
+  (let ((variables (an/minisat-clauses minisat-output)))
+    
+    (setf variables
+          (loop for v in variables
+                if (> v 0)
+                collect (an/sat-variable-decode v num-vertices)))
+
+    (sort variables (lambda (v1 v2)
+                      (> (an/sat-variable-position v1)
+                         (an/sat-variable-position v2))))
+    
+    (mapcar (lambda (v)
+              (an/sat-variable-vertex v))
+            variables)))
+
+
 (an/hm-problem-to-clauses "tests/01")
+(an/hm-problem-to-clauses "tests/02")
 
 ;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
 ;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
 ;; (mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
 ;; (mapcar 'an/hm-clause-display (an/hm-vertices-no-simultaneous-positions 3))
-;;
+
 ;;; References
 ;; [1] https://www.csie.ntu.edu.tw/~lyuu/complexity/2011/20111018.pdf
 ;;
@@ -280,3 +298,4 @@ graph G."
 ;; vertex must be visited exactly once, there is only one vertex on
 ;; each position in the path, two successive vertices must be
 ;; connected by an edge.
+
