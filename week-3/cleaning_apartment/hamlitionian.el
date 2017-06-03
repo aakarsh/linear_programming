@@ -55,6 +55,10 @@
 ;; in the path (AdjacencyPreserving)
 ;;
 ;;    not(x_ki) + not(x_{k+1}j): if (v_i,v_j) \not \in E(G)
+;;
+;;  Mapping clause variables x_ij to sat variable s_i. Since i varies
+;;  from 0 to |V| and j also varies from 0 |V|
+;;
 
 (require 'an-lib)
 (require 'dash)
@@ -69,6 +73,30 @@
   (num-vertices 0)
   (num-edges 0)
   (relations 0))
+
+(defun an/sat-variable-encode (var num-vertices)
+  "Encode the variable `var`   "
+  (let ((factor (expt 10  (ceiling  (log  num-vertices  10))))
+        (compliment 1))
+    (if (an/sat-variable-compliment var)
+        (setf compliment -1))
+    (* compliment
+       (+  (* (+ 1 (an/sat-variable-vertex var)) factor)
+           (+ 1  (an/sat-variable-position var))))))
+
+(defun an/sat-variable-decode (num num-vertices)
+  "Decode the result of sat."
+  (let*  ((factor (expt 10 (ceiling (log num-vertices 10))))
+          (compliment nil)
+          (num-value (abs num))
+          (position (- (% num-value factor)  1))
+          (vertex   (- (/ num-value factor ) 1)))
+    (if (< num 0)
+        (setf  compliment t))
+    (make-an/sat-variable
+     :vertex vertex
+     :position position
+     :compliment compliment)))
 
 (defun an/hm-problem-parse-file (in-file)
   "Parse input file to create hm-problem structure"
@@ -91,9 +119,6 @@ sat-solver"
                  (an/hm-problem-num-vertices hm-problem)
                  (an/relations:decrement (an/hm-problem-relations hm-problem))
                  :edge-type 'undirected))
-
-
-
 
 (defun an/sat-variable-dispaly (v)
   (format  "x%s_{%d,%d}"
@@ -177,7 +202,7 @@ different vertices by adding conditions for each vertex pair"
 
 (defun an/hm-vertices-no-non-adjacent-vertices (graph)
   "Ensure that every position has at least one vertex."
-  (let ((clauses '()))    
+  (let ((clauses '()))
     (an/graph-compliment graph)
     (loop
      with nodes = (an/graph-nodes graph)
@@ -196,41 +221,53 @@ different vertices by adding conditions for each vertex pair"
                          (list
                           (make-an/sat-variable :position pos :vertex node-number)
                           (make-an/sat-variable :position next-pos :vertex non-neighbour-node-number)))
-                        clauses))))    
+                        clauses))))
     ;; set it back
     (an/graph-compliment graph)
     clauses))
-
-(mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
-(mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
-(mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
-(mapcar 'an/hm-clause-display (an/hm-vertices-no-simultaneous-positions 3))
 
 (defun an/hm-problem-to-clauses(input-file)
   "Parse a input file, build an undirected graph G and convert it
 into a set of SAT clauses such that if the SAT problem is
 satisfiable then there exists a hamiltonian cycle in the undirect
-graph G"
+graph G."
   (let* ((parsed (an/hm-problem-parse-file input-file))
         (num-vertices (an/hm-problem-num-vertices parsed))
         (num-edges    (an/hm-problem-num-edges parsed))
         (input-graph   (an/hm-problem-graph-build parsed))
-        (clauses '()))
-
-
+        (clauses '())
+        (output-clauses '()))
+    
     (an/list:extend clauses  (an/hm-vertices-at-least-once num-vertices))
+
     (an/list:extend clauses (an/hm-vertices-at-most-once num-vertices))
     (an/list:extend clauses (an/hm-no-empty-positions num-vertices))
     (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
-    
+    ;;
     ;; Edge dependent
-    (an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
+    ;;(an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
+    ;;
+    ;; Collect output clauses here
+    (setf output-clauses
+          (loop for c in clauses collect
+                (loop for v in (an/hm-clause-variables c)
+                      collect (an/sat-variable-encode v num-vertices))))
 
-    (mapcar 'an/hm-clause-display clauses)))
+    
+    (an/run-minisat-clauses output-clauses)
+    
+    ))
 
+;;Resulting Assignment :
+;;[t [-1 -2 -3 -4 -5 -6 -7 -8 -9 -10 -11 -12 -13 -14 15 -16 -17 -18 -19 -20 -21 -22 -23 -24 25 -26 -27 -28 -29 -30 -31 -32 -33 -34 35 -36 -37 -38 -39 -40 -41 -42 -43 -44 45 -46 -47 -48 -49 -50 -51 -52 -53 -54 55 0]]
+;;
+(an/hm-problem-to-clauses "tests/01")
 
-(an/hm-problem-to-clauses "tests/02")
-
+;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-least-once 3))
+;; (mapcar 'an/hm-clause-display (an/hm-vertices-at-most-once 3))
+;; (mapcar 'an/hm-clause-display (an/hm-no-empty-positions 3))
+;; (mapcar 'an/hm-clause-display (an/hm-vertices-no-simultaneous-positions 3))
+;;
 ;;; References
 ;; [1] https://www.csie.ntu.edu.tw/~lyuu/complexity/2011/20111018.pdf
 ;;
