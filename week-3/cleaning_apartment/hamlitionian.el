@@ -233,32 +233,28 @@ different vertices by adding conditions for each vertex pair"
 into a set of SAT clauses such that if the SAT problem is
 satisfiable then there exists a hamiltonian cycle in the undirect
 graph G."
-  
   (let* ((parsed (an/hm-problem-parse-file input-file))
          (num-vertices (an/hm-problem-num-vertices parsed))
          (num-edges    (an/hm-problem-num-edges parsed))
          (input-graph   (an/hm-problem-graph-build parsed))
          (clauses '())
          (output-clauses '()))
-    
     (an/list:extend clauses  (an/hm-vertices-at-least-once num-vertices))
     (an/list:extend clauses (an/hm-vertices-at-most-once num-vertices))
     (an/list:extend clauses (an/hm-no-empty-positions num-vertices))
     (an/list:extend clauses (an/hm-vertices-no-simultaneous-positions  num-vertices))
-
     ;; Edge dependent
     (setf edge-clasues (an/hm-vertices-no-non-adjacent-vertices input-graph))
-        
+    ;;
     (an/list:extend clauses  (an/hm-vertices-no-non-adjacent-vertices input-graph))
-    
     ;; collect output clauses here
     (setf output-clauses
           (loop for c in clauses collect
                 (loop for v in (an/hm-clause-variables c)
                       collect (an/sat-variable-encode v num-vertices))))
-    
+    ;;
     (setf minisat-output  (an/run-minisat-clauses output-clauses))
-    
+    ;;
     (if (an/minisat-satisfiable minisat-output)
         (an/hamilitonian-path-from-sat minisat-output num-vertices)
       nil)))
@@ -278,6 +274,5 @@ graph G."
        (+  (an/sat-variable-vertex v) 1))
          variables)))
 
-
-(an/hm-problem-to-clauses "tests/01")
-(an/hm-problem-to-clauses "tests/02")
+;; (an/hm-problem-to-clauses "tests/01")
+;; (an/hm-problem-to-clauses "tests/02")
