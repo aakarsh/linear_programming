@@ -179,24 +179,6 @@ class ClauseVariable:
         vertex = math.ceil(int_value/factor)-1
         return ClauseVariable(compliment,vertex,postion)
 
-#    @staticmethod
-#    def print_clauses(num_variables,clauses):
-#        """Output format is C V : that is number of clauses followed
-#by the number of variables.  Following this we lines per clause ending
-#with 0. Negations represent a variable complimented.
-#        """
-#        ClauseVariable.init_encoding_labels(clauses)
-#        num_variables = len(ClauseVariable.label_encodings)
-#        num_clauses = len(clauses)
-#        print("%3d %3d" %(num_clauses,num_variables))
-#        for clause in clauses:
-#            encode = ClauseVariable.minisat_encode_label
-#            s=""
-#            for clause_variable in clause:
-#                s += " %3d" % encode(clause_variable)
-#            print("%s 0"%s)
-
-
 class MinisatRunner:
 
     temp_in =  "/tmp/minisat.in"
@@ -279,6 +261,22 @@ class MinisatRunner:
         finally:
             out.close()
 
+    def print_clauses(self):
+        """Output format is C V : that is number of clauses followed
+        by the number of variables.  Following this we lines per clause ending
+        with 0. Negations represent a variable complimented.
+        """
+        num_variables = len(self.label_encodings)
+        num_clauses = self.num_clauses
+        clauses = self.clauses
+        print("%3d %3d" %(num_clauses,num_variables))
+        for clause in clauses:
+            s=""
+            for clause_variable in clause:
+                s += " %3d" % self.minisat_encode_label(clause_variable)
+            print("%s 0"%s)
+
+
 def test():
     ap = ApartementProblem(5,4,[[1,2],[2,3],[3,5],[4,5]])
     g = Graph(ap.n,ap.m,ap.relations)
@@ -315,3 +313,5 @@ if __name__ == "__main__":
     clauses.extend(hp.no_non_adjacent_vertices())
 
     # Print clauses in appropriate order
+    mr = MinisatRunner(clauses)
+    mr.print_clauses();
