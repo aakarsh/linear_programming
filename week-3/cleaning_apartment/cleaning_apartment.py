@@ -138,14 +138,14 @@ class ClauseVariable:
     encoint_positions = {}
     max_position = 0
     max_vertex = 0
+    
     def __init__(self,compliment, vertex,postion):
         self.compliment  = compliment
         self.vertex = vertex
         self.postion = postion
-
+        #
         if ClauseVariable.max_vertex < vertex:
             ClauseVariable.max_vertex = vertex
-
         if ClauseVariable.max_position < postion:
             ClauseVariable.max_position = postion
 
@@ -160,7 +160,6 @@ class ClauseVariable:
     def encoding_factor():
         return int(math.pow(10,math.ceil(math.log(10,ClauseVariable.max_position+1))))
 
-
     def minisat_encode(self):
         """ Creaes a mapping into a clause variable from """
         factor = ClauseVariable.encoding_factor()
@@ -168,7 +167,6 @@ class ClauseVariable:
         if self.compliment:
             retval= -1*retval
         return retval
-
 
     @staticmethod
     def minisat_decode(clause_str):
@@ -212,7 +210,6 @@ class MinisatRunner:
         self.init_encoding_labels(clauses)
         self.num_variables = len(self.label_encodings)
 
-
     def init_encoding_labels(self,clauses):        
         # create unique list of encoded variables and give them a position
         self.label_encodings = list(set([abs(clause_variable.minisat_encode())
@@ -224,7 +221,6 @@ class MinisatRunner:
             enc = self.label_encodings[i]
             self.encoding_positions[enc] = i
 
-            #@staticmethod
     def minisat_encode_label(self,clause):
         """ Assuming label encodings were setup for all clauses first """
         mini_encoding = clause.minisat_encode()
@@ -234,7 +230,6 @@ class MinisatRunner:
             positional *= -1
         return positional
 
-    #@staticmethod
     def minisat_decode_label(self,label_str):
         label_int = int(label_str)
         compliment = 1
@@ -269,20 +264,17 @@ class MinisatRunner:
             in_file.close()
 
     def write_minisat(self):
-        """Write out mi """
-        #TODO move label_encodings there
-        num_variables = len(self.label_encodings) #self.num_variables
+        """Write out minisait in format of minisat command runner """
+        num_variables = len(self.label_encodings)
         num_clauses = self.num_clauses
         clauses = self.clauses
         outfile = MinisatRunner.temp_in
         out = open(outfile,"w")
-        #
         try:
-            out.write("p cnf %3d %3d\n" %( num_variables,num_clauses))
+            out.write("p cnf %3d %3d\n" % (num_variables,num_clauses))
             for clause in clauses:
                 for clause_variable in clause:
-                    # change minisat encode_label to be here
-                    out.write(" %3d"%self.minisat_encode_label(clause_variable));
+                    out.write(" %3d" % self.minisat_encode_label(clause_variable));
                 out.write(" 0\n")
         finally:
             out.close()
