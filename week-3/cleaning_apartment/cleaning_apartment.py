@@ -3,6 +3,9 @@ import math
 import os
 import itertools
 
+debug = False
+
+
 class ApartementProblem:
     def __init__(self,n,m,relations):
         self.n = n
@@ -82,7 +85,7 @@ class HamiltonianPath:
     def vertex_at_most_once(self,vertex):
         """Ensure that a vertex will appear at most once at this is
         done by considering all combinations of vertices and ensuring
-        that vertex can only ever appear at one postion for each pair
+        that vertex can only ever appear at one position for each pair
         of positions."""
         clauses = []
         for (p1,p2) in itertools.combinations(range(0,self.graph.num_vertices),2):
@@ -101,20 +104,20 @@ class HamiltonianPath:
         """Ensure that every position is occupied by at least one vertex """
         clauses = []
 
-        for postion in range(0,self.graph.num_vertices):
+        for position in range(0,self.graph.num_vertices):
             clause = []
             for vertex in range(0,self.graph.num_vertices):
-                clause.append(ClauseVariable(False,vertex,postion))
+                clause.append(ClauseVariable(False,vertex,position))
             clauses.append(clause)
         return clauses
 
     def vertex_no_simultaneos(self):
         """ Ensure that two vertices can simultaneosly occupy the same position """
         clauses = []
-        for postion in range(0,self.graph.num_vertices):
+        for position in range(0,self.graph.num_vertices):
             for (v1,v2) in itertools.combinations(range(0,self.graph.num_vertices),2):
-                clauses.append([ClauseVariable(True,v1,postion),
-                                ClauseVariable(True,v2,postion)])
+                clauses.append([ClauseVariable(True,v1,position),
+                                ClauseVariable(True,v2,position)])
         return clauses
 
     def no_non_adjacent_vertices(self):
@@ -139,33 +142,35 @@ class ClauseVariable:
     max_position = 0
     max_vertex = 0
     
-    def __init__(self,compliment, vertex,postion):
+    def __init__(self,compliment, vertex,position):
         self.compliment  = compliment
         self.vertex = vertex
-        self.postion = postion
+        self.position = position
         #
         if ClauseVariable.max_vertex < vertex:
             ClauseVariable.max_vertex = vertex
-        if ClauseVariable.max_position < postion:
-            ClauseVariable.max_position = postion
+        if ClauseVariable.max_position < position:
+            ClauseVariable.max_position = position
 
 
     def __repr__(self):
-        return "<%s,%d,%d>" % (self.compliment,self.vertex,self.postion)
+        return "<%s,%d,%d>" % (self.compliment,self.vertex,self.position)
 
     def __str__(self):
         return self.__repr__()
 
     @staticmethod
     def encoding_factor():
-        return int(math.pow(10,math.ceil(math.log(10,ClauseVariable.max_position+1))))
+        return int(math.pow(10,math.ceil(math.log(ClauseVariable.max_position+1,10))))
 
     def minisat_encode(self):
         """ Creaes a mapping into a clause variable from """
         factor = ClauseVariable.encoding_factor()
-        retval = (factor*(self.vertex + 1))+ (self.postion + 1)
+        
+        retval = (factor*(self.vertex + 1))+ (self.position + 1)
         if self.compliment:
             retval= -1*retval
+        if debug: print("Encoding [factor %d] (vertex %d, position %d) -> %d " %(factor,self.vertex,self.position,retval))
         return retval
 
     @staticmethod
@@ -175,9 +180,9 @@ class ClauseVariable:
         int_value = int(clause_str)
         compliment = (int_value < 0)
         int_value = abs(int_value)
-        postion  = (int_value % factor) -1
+        position  = (int_value % factor) -1
         vertex = math.ceil(int_value/factor)-1
-        return ClauseVariable(compliment,vertex,postion)
+        return ClauseVariable(compliment,vertex,position)
 
 class MinisatRunner:
 
@@ -202,6 +207,7 @@ class MinisatRunner:
         for i in range(len(self.label_encodings)):
             enc = self.label_encodings[i]
             self.encoding_positions[enc] = i
+            if debug: print("mapping %d -> %d " % (enc,i ))
 
     def minisat_encode_label(self,clause):
         """ Assuming label encodings were setup for all clauses first """
@@ -276,9 +282,16 @@ class MinisatRunner:
                 s += " %3d" % self.minisat_encode_label(clause_variable)
             print("%s 0"%s)
 
+def test_file(in_file):
+    ap = ApartementProblem.read_file(in_file)
+    test_common(ap)
 
-def test():
+def test_simple():
     ap = ApartementProblem(5,4,[[1,2],[2,3],[3,5],[4,5]])
+    test_common(ap)
+    
+def test_common(ap):
+    
     g = Graph(ap.n,ap.m,ap.relations)
     hp = HamiltonianPath(g)
 
@@ -290,15 +303,20 @@ def test():
     clauses.extend(hp.no_non_adjacent_vertices())
     
     mr = MinisatRunner(clauses)
+    #mr.print_clauses()
     variables = mr.check_sat()
+
     if len(variables) > 0:
         true_variables = [ var for var in variables if not var.compliment]
         def sort_by_position(v1):
-            return v1.postion        
+            return v1.position        
         true_variables.sort(key=sort_by_position)
         for v in true_variables:
             print(v.vertex,end=' ')
         print("")
+    else:
+        print("No Hamiltonain Path Found!")
+
 
 if __name__ == "__main__":
     ap = ApartementProblem.read()
