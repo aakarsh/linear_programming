@@ -1,6 +1,5 @@
 (require 'an-lib)
 (require 'cl)
-(require 'gaussian)
 
 ;; Simplex Algorithm
 ;;
@@ -257,7 +256,6 @@
 ;;
 ;;     InitializeSimplex(A, b, c):
 ;;
-
 ;;
 ;;       if b[i] >= 0:
 ;;          return ({1,2,3,...n},{n+1,n+2,...,n+m}, A,b,c
@@ -280,6 +278,13 @@
 
 (require 'cl)
 (require 'eieio)
+
+
+(defmacro s/debug (msg &rest args)
+  `(with-current-buffer (get-buffer-create "*simplex:debug*")
+     (insert (format (format  "%s\n" ,msg) ,@args))
+     (goto-char (point-max))))
+
 
 (defclass s/lp () ; No superclasses
   (
@@ -311,172 +316,271 @@
     (cond
      ((eq index 0)
       (if coefficient
-          (format " %d " coefficient)))
-     ((< coefficient 0 ) (format " - %d x_%d " (abs coefficient) index))
-     ((> coefficient 0 ) (format " + %d x_%d " coefficient index))
+          (format " %.2f " coefficient)))
+     ((< coefficient 0 ) (format " - %.2f x_%d " (abs coefficient) index))
+     ((> coefficient 0 ) (format " + %.2f x_%d " coefficient index))
      (t ""))))
 
-(defun s/lp:equation-string (equation-vec)
+(defun s/lp:equation-string (equation-vec equation-constant)
   "Convert given printable equation vector to text"
   (setf index-coef-pairs
         (loop for objective  across equation-vec
               for i = 0 then (+ i 1)
               if objective collect (list i objective)))
   (setf variables (mapcar 's/lp:var-string index-coef-pairs))
-  (loop for v in variables
-        concat (format " %s " v)))
+  (format "%.2f %-5s" equation-constant
+          (loop for v in variables
+                concat (format " %s " v))))
 
-(defun s/lp:objective-string (objective-function)
-  (format "Max : %s"
-          (s/lp:equation-string  objective-function)))
+(defun s/lp:objective-string (objective-function objective-constant)
+  (format "Max : %s" 
+          (s/lp:equation-string  objective-function objective-constant)))
 
 (cl-defmethod s/print((lp s/lp))
   (let ((B (oref lp B))
         (NB (oref lp NB))
         (A (oref lp A))
         (b (oref lp b))
-        (c (oref lp c)))
+        (c (oref lp c))
+        (v (oref lp v)))    
 
-    (message (s/lp:objective-string c))
-
+    (s/debug (s/lp:objective-string c v))
     (setf equations
           (loop for i in B
-                collect (format "x_%d = %s " i
-                                (s/lp:equation-string (aref A (- i 1))))))
+                collect
+                (format "x_%d = %s " i
+                        (s/lp:equation-string (aref A i) (aref b i)))))
     (loop for e in equations do
-          (message e))))
+          (s/debug e))))
 
-(cl-defmethod s/pivot((lp s/lp) e l)
+(defstruct s/equation
+  (equation nil )
+  (constant 0))
+
+
+
+(defun s/entering-eq-init (A b B NB
+                             leaving   ;; Index of  leaving equation originally in non-basic set
+                             entering) ;; Index of entering equation originally in basic set
+
+  (setq pivot (abs  (table/at A leaving entering)))
+  (setq pivot-inverse  (/ 1.0 pivot))
+
+    ;; leaving constant
+    (setq leaving-constant (aref b leaving))
+
+    ;; entering constant will be scaled by pivot inverse
+    (setq entering-constant
+          (* leaving-constant pivot-inverse))
+
+    ;; entering equation will be scaled
+    (setq entering-equation
+          (an/vector:scale
+           (aref A leaving) pivot-inverse :in NB :skip entering))
+
+    ;; basic variable 
+    (loop for basic-variable  in B do
+          (aset entering-equation basic-variable nil))
+    
+    (aset entering-equation entering nil)
+    (aset entering-equation leaving (* -1.0 pivot-inverse))
+    
+    (make-s/equation :equation entering-equation
+                     :constant entering-constant))
+
+(defun s/substitue-into-equation (equation
+                                  substitute-eq
+                                  non-basic-set
+                                  entering-idx
+                                  leaving-idx)
+  
+  "Subsititute the substitute equation into equation"
+
+  (let* ((current-equation (s/equation-equation equation))
+         (current-constant (s/equation-constant equation))
+         (entering-var-coefficient (aref current-equation entering-idx))
+         (return-constant nil)
+         (return-equation
+          (make-vector (length current-equation) nil)))
+
+    (setq entering-constant  (s/equation-constant substitute-eq))
+    (setq entering-eq  (s/equation-equation substitute-eq))
+
+    (setq return-constant
+          (+ current-constant  (* entering-var-coefficient entering-constant)))
+
+    (loop for variable in non-basic-set
+          if (not (equal variable entering-idx))
+          do
+          ;; iterate through variables in entering equation
+          ;; check current coefficient of the variable
+          (let ((current-coefficient  (aref current-equation variable))
+                (substitute-coefficient (aref entering-eq variable)))
+
+            ;; Present in current coefficent
+            (if current-coefficient
+                (aset return-equation variable
+                      (+ current-coefficient
+                         (* entering-var-coefficient substitute-coefficient)))
+              ;; no current-coefficient
+              (aset return-equation variable
+                    (* -1  (* entering-var-coefficient substitute-coefficient))))))
+    
+    (aset return-equation leaving-idx
+                       (* entering-var-coefficient (aref entering-eq leaving-idx)))
+        
+    ;; return the substituted equations
+    (make-s/equation :equation return-equation
+                     :constant return-constant)))
+
+
+
+(cl-defmethod s/pivot2 ((lp s/lp) e l test)
   "Will pivot be changing the roles of entering and leaving
 variables"
-  (let* ((B  (oref lp B))
+  (let* ((A  (oref lp A))  ;; Input equation coefficents
+         (b  (oref lp b))  ;; Constant coefficients
+         (c  (oref lp c))  ;; Objective function coefficents
+         (v  (oref lp v))  ;; Objecive constnat coefficent
+         (B  (oref lp B))  ;; Members of of the basic set
+         (NB (oref lp NB)) ;; Members of the non-basic set
+
+         ;; make a set of basic elements for faster look up
          (B-set (an/set-make :init B))
-         (NB (oref lp NB))
+         ;; make a set of non-basic elements
          (NB-set (an/set-make :init NB))
-         (A  (oref lp A))
-         (b  (oref lp b))
-         (c  (oref lp c))
-         (v  (oref lp v))
-         (ret-c (make-vector (length c) nil))
-         (ret-v nil)
-         (ret-b (make-vector (length b)  nil))
-         (ret-A (an/vector:make (length A)
-                                (lambda (i) (make-vector (length (aref A i))
-                                                    nil))))
+         ;; Recomputed table of coefficients of a
+         (ret-A (an/make-table-shape A 0))
+         ;; Recomputed objective constant coefficient
+         (ret-b (an/make-vector-shape b 0))
+         ;; Recomputed value of objective function coefficentis
+         (ret-c (an/make-vector-shape c 0))
+         ;; Recomputed objective constant coefficent
+         (ret-v 0)
+         ;; Updated linear program
          (ret-lp  (s/lp :B B :NB NB :b b :c c))
+         ;; Leaving equation and entering's coefficent value
          (pivot-coefficient (table/at A l e))
-         (pivot-inverse (/ 1.0 pivot-coefficient)))
-
-    (message "pivot-coefficient[%d][%d]:%d" l e pivot-coefficient)
-
-    ;; 1. Compute the entering variable's final equation using the
-    ;;    pivot element (l,e):
-    ;; Scale leaving equation's b  by pivot-coefficient
-    (aset ret-b e (* (aref b l) pivot-inverse))
-
-    ;; Scale all leaving equation coefficient by pivot-coefficient
-    ;; set the the entering equation to be this new scaled leaving equation
-    (aset ret-A e
-          (an/vector:scale
-           (aref A l) pivot-inverse :in NB :skip e))
-
-    ;; set the entering variable's coefficent to be
-    (table/setf ret-A e l pivot-inverse)
-
-    ;; 2. For all equations except the leaving equation (for which it
-    ;;    would be pointless) we need to re-calculate their
-    ;;    coefficient as a result of substitution.
-
-    ;; cur - Will denote the equation which we will be working with
-    (loop for cur in B
-          for current-entering-coeff = (table/at A cur e)
-          if (not (equal cur l)) do
-
-          ;; 2.1 Update the corresponding equation.
-          (let* ((b-entering-coeff (aref ret-b e))
-                 (delta (* b-entering-coeff current-entering-coeff))
-
-                 ;; 2.1.1 Update coefficient into ret-b
-
-                 (an/vector:subtract-into ret-b b cur delta)))
-
-          ;; 2.2 Update coefficients of other variables in current
-          ;;     equation by introducing entering variable as a
-          ;;     subsitituion of the leaving variable.
-
-          (loop for var in N
-                for cur-var-coeff = (table/at A  cur var)
-                for cur-entering-coef = (table/at A cur e)
-                for entering-var-coef = (table/at ret-A e var)
-                for delta = (* cur-entering-coef entering-var-coef)
-
-                for cur-equation = (aref A cur)
-                for new-equation = (aref ret-A cur)
-
-                do
-
-                ;; 2.2.2 Update variables by delta from substituting
-                ;; entering equation into current equation.
-
-                (an/vector:subtract-into new-equation cur-equation var  delta)))
+         ;; We will be dividing the leaving equation's coefficents
+         ;; with the pivot coeffient
+         )
     
-          ;; 2.3 Update objective function both the constant and
-          ;;     variable part.
-          (let* ((entering-objective-coeff (aref c e))
-                 (entering-constant-coeff  (aref ret-b e))
-                 (delta          (* entering-constant-coeff
-                                    entering-objective-coeff)))
-            
-            ;; 2.3.1 Updating by constant part of objective function
-            ;;       delta
-            (setf ret-v (- v delta)))
+    ;; 1. Compute the entering variable's final equation using the
+    ;;    pivot element (l,e).
+    ;;
+    ;;    We are going to use the leaving equation to build the
+    ;;    entering variable's equation.
+    ;;
+    ;;   scale leaving equation's b by pivot-coefficient
+    ;;
+    (setq entering-equation  (s/entering-eq-init A b B NB l e))
+    
+    ;; construct new entering equation    
+    (aset ret-b e (s/equation-constant entering-equation))
+    (aset ret-A e (s/equation-equation entering-equation))
 
-          (loop for var in N
-                for var-obj-value = (aref c var)
-                for entering-obj-value = (aref e var)
-                for entering-eq-coeff = (table/at ret-A e var)
-                for delta = (* entering-eq-coeff
-                               entering-obj-value)                
-                if (not (equal var e))                
-                do
-                (an/vector:subtract-into ret-c c var delta))
+    ;; For every basic equation set-up 
+    (loop for equation-idx in B
+          if (not (equal equation-idx l))
+          do
+          (setq current-equation
+                (make-s/equation :equation (aref A equation-idx)
+                                 :constant (aref b equation-idx)))
+          (setq new-equation
+                (s/substitue-into-equation current-equation
+                                           entering-equation
+                                           NB e l))
           
-          ;; 4. Exchange leaving and entering variables in NB and B
-          ;;    Entering variable: becomes a     basic variable.
-          ;;    Leaving  variable: becomes a non-basic variable.
-          
-          (an/set-replace! NB-set e l )
-          (an/set-replace! B-set  l e )
-          
-          (setq NB (an/set-list NB-set :sort '<))
-          (setq B  (an/set-list B-set :sort '<))
+          (setf (aref ret-A equation-idx ) (s/equation-equation new-equation))
+          (setf (aref ret-b equation-idx ) (s/equation-constant new-equation)))
 
-          ;; 5. Create the Pivoted instance of the LP
-          (s/lp :NB NB
-                :B  B
-                :A  ret-A
-                :b  ret-b
-                :c  ret-c
-                :v  ret-v)))
+    ;; For the objective equation
+    (setq objective-equation
+          (make-s/equation :equation c :constant v))
+    
+    ;; Subsitute the entering equation into objective function 
+    (setq new-objective-equation
+          (s/substitue-into-equation objective-equation
+                                     entering-equation
+                                     NB e l))
+    
+    (setq ret-c (s/equation-equation new-objective-equation))
+    (setq ret-v (s/equation-constant new-objective-equation))
+    
+    (an/set-replace! NB-set e l)
+    (an/set-replace! B-set  l e)
+
+    (setq NB (an/set-list NB-set :sort '<))
+    (setq B  (an/set-list B-set :sort '<))
+
+    ;; 5. Create the pivoted instance of the LP
+    (s/lp :NB NB
+          :B  B
+          :A  ret-A
+          :b  ret-b
+          :c  ret-c
+          :v  ret-v)))
 
 
-(defvar s/test-input
-  (s/lp :c  [nil 3 1 2 nil nil nil]
-        :b  [nil nil nil 30 24 36]
-        :v 0
-        :NB '(1 2 3)
-        :B  '(4 5 6)
-        :A  (vector   [ nil  nil  nil  nil  nil  nil]
-                      [ nil  nil  nil  nil  nil  nil]
-                      [ nil  nil  nil  nil  nil  nil]
-                      [  -1   -1   -3  nil  nil  nil]
-                      [  -2   -2   -5  nil  nil  nil]
-                      [  -4   -1   -2  nil  nil  nil])))
+(defun s/entering-eq-test ()
+    (setq A (vector
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [   -1    -1    -3  nil  nil  nil]
+                   [   -2    -2    -5  nil  nil  nil]
+                   [   -4    -1    -2  nil  nil  nil]))
+    
+  (setq b   [nil nil nil 30 24 36])
+  (setq NB   '(0 1 2))
+  (setq B   '(3 4 5))
+  (s/entering-eq-init A b B NB 5 0))
 
-(defun s/test-print()
+(defun s/substitution-test ()
+  (setq main-equation
+        (make-s/equation :equation  [   -1  -1  -3 nil nil nil nil]
+                                    ;; x_1 x_2 x_3 x_4 x_4 x_5
+                         :constant 30))
+  (setq sub-equation
+        (make-s/equation
+         :constant 9
+         :equation  [nil -.25 -.5  nil nil -.25 ]))
+  
+   (s/substitue-into-equation
+    main-equation sub-equation (list 0 1 2) 0 5)
+   
+   (setq objective-equation
+         (make-s/equation :equation  [ 3  1  2 nil nil nil nil]
+                          ;; x_1 x_2 x_3 x_4 x_4 x_5
+                          :constant 0))   
+   (s/substitue-into-equation
+      objective-equation  sub-equation  (list 0 1 2)  0 5))
+
+
+(defun s/test()
+  (setq s/test-input
+        (s/lp :c  [3 1 2 0 0 0]
+              :b  [0 0 0 30 24 36]
+              :v 0
+              :NB '(0 1 2)
+              :B  '(3 4 5)
+              ;; Is this right shoud we not be using zero indices here??
+              ;; :NB '(1 2 3)
+              ;; :B  '(4 5 6)
+              :A  (vector
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [   -1    -1    -3  nil  nil  nil]
+                   [   -2    -2    -5  nil  nil  nil]
+                   [   -4    -1    -2  nil  nil  nil])))
+
   (setq input s/test-input)
-  (s/pivot input 0 1)
-  (s/print input))
+  (s/debug "Before Pivot:")
+  (s/print input)
+  (setq pivot-result (s/pivot2 input 0 5 t))
+  (s/debug "After Pivot:")
+  (s/print pivot-result))
 
 ;; z = 3 x_1 + x_2 + 2*x_3
 ;; x_1 = undef ;; dont use these while they are non-basic?
@@ -498,35 +602,19 @@ variables"
 ;; B  = {  1,   2,   3}
 ;; NB = {  4,   5,   6}
 
-
-
-;; (defun s/pivot(entering leaving basis-set non-basis-set)
-;;   " Pivot a slack form matrix for simplex based optimization
-;;   `entering` - index of element becoming basic
-;;   `leaving`  - index of element leaving the basic element"
-;;
-;;   ;; 1. Scale the leaving row of the slack form matrix by the leaving
-;;   ;;    entry form
-;;   (loop
-;;    with pivot-entry = (g/table-at s/A leaving entering)
-;;    with b-entering  = (/ (aref s/b leaving) pivot-entry)
-;;    for row from 0 below (g/table-ncols s/A) do
-;;    (if s/debug
-;;        (message "pivot-entry:%d b-entering:%d" pivot-entry b-entering))))
-
 (defun s/read-input(input-file)
   "Read in simplex from file."
   (with-temp-buffer
     (insert-file-contents input-file t)
     (goto-char 0)
-    (let*((sizes (g/fetch-line-as-numbers))
+    (let*((sizes (an/buffer:fetch-line-as-numbers))
           (m (aref sizes 0))
           (n (aref sizes 1)))
       (setf s/A (make-vector m nil))
       (loop for i from 0 below m do
-            (aset s/A i (g/fetch-line-as-numbers)))
-      (setf s/b (g/fetch-line-as-numbers))
-      (setf s/objective (g/fetch-line-as-numbers)))))
+            (aset s/A i (an/buffer:fetch-line-as-numbers)))
+      (setf s/b (an/buffer:fetch-line-as-numbers))
+      (setf s/objective (an/buffer:fetch-line-as-numbers)))))
 
 (defvar s/test-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-2/diet")
 
