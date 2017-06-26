@@ -354,10 +354,9 @@
           (s/debug e))))
 
 (defstruct s/equation
+  "Representation for single equation"
   (equation nil )
   (constant 0))
-
-
 
 (defun s/entering-eq-init (A b B NB
                              leaving   ;; Index of  leaving equation originally in non-basic set
@@ -431,86 +430,65 @@
     (make-s/equation :equation return-equation
                      :constant return-constant)))
 
+(cl-defmethod s/posivitve-objective-coefficent  ((lp  s/lp) variable-idx)
+  "Pick entering index to be one wish the first non-negative value in objective function"
+  (let* ((objective (oref lp c))
+         (coefficient (aref objective variable-idx)))
+    (and coefficient (> coefficient 0))))
+
+
 (cl-defmethod s/pick-entering-idx ((lp  s/lp))
-    (let* ((A  (oref lp A))  ;; Input equation coefficents
-           (b  (oref lp b))  ;; Constant coefficients
-           (c  (oref lp c))  ;; Objective function coefficents
-           (v  (oref lp v))  ;; Objecive constnat coefficent
-           (B  (oref lp B))  ;; Members of of the basic set
-           (NB (oref lp NB)) ;; Members of the non-basic set
-           ;; make a set of basic elements for faster look up
-           (B-set (an/set-make :init B))
-           ;; make a set of non-basic elements
-           (NB-set (an/set-make :init NB))
-           ;;
-           (entering-idx nil))
-      
-      (loop for non-basic-variable in NB
-           do
-           (if  (>  (aref c non-basic-variable) 0) ;; first on negative coefficient
-               (setq entering-idx non-basic-variable)))      
-      entering-idx))
-
-(cl-defmethod s/obj-has-postive-coefficients ((lp s/lp))
-  (let* ((c  (oref lp c))  ;; Objective function coefficents
-         (v  (oref lp v))  ;; Objecive constnat coefficent         
-         ;; Leaving equation and entering's coefficent value)
-         (has-positive-coefficient nil ))
-    
-    (loop for coefficent across c
-          if (and coefficent (> coefficent 0)) do
-          (setf has-positive-coefficient t))
-    has-positive-coefficient))
+  "Pick entering index to be one wish the first non-negative value in objective function"
+  (an/list:find-first
+   (oref lp NB)  (lambda (var-idx) (s/posivitve-objective-coefficent lp var-idx))))
 
 
+(cl-defmethod s/lp-objective-contains-positive-coefficients? ((lp s/lp))
+  "Checks that the objecive function has positive coefficeints"
+  (an/vector:contains? (oref lp c) 'non-nil? 'non-zero-positive?))
 
+(defun s/variable-slackness (eq var-idx)
+  "Defines variable's slackness as -constant/coefficient in the equation"
+  (let* ((equation   (s/equation-equation eq))
+         (constant   (s/equation-constant eq))
+         (coefficient (* -1 (aref equation var-idx))))    
+    (if (> coefficient 0)
+        (/ constant constant)
+      nil)))
 
 (cl-defmethod s/pick-leaving-idx ((lp s/lp) entering-idx)
   "Will pivot be changing the roles of entering and leaving
 variables"
   (let* ((A  (oref lp A))  ;; Input equation coefficents
          (b  (oref lp b))  ;; Constant coefficients
-         (c  (oref lp c))  ;; Objective function coefficents
-         (v  (oref lp v))  ;; Objecive constnat coefficent
          (B  (oref lp B))  ;; Members of of the basic set
          (NB (oref lp NB)) ;; Members of the non-basic set
-         ;; make a set of basic elements for faster look up
-         (B-set (an/set-make :init B))
-         ;; make a set of non-basic elements
-         (NB-set (an/set-make :init NB))
-         ;;
-         (slackness (an/make-vector-shape b nil))
-         ;; Leaving equation and entering's coefficent value)
-         )    
-    ;; find the slackness of all basic variables
-    (loop for basic-variable in B
-          for possible-pivot = (* -1 (table/at A basic-variable entering-idx))
-          do
-          (if (>  possible-pivot 0)
-              (aset slackness basic-variable
-                    (/ (aref b basic-variable) possible-pivot))))
+         (slackness (an/make-vector-shape b nil)))
 
-    (let ((min nil)
-          (min-idx nil))
-      (loop for s across slackness
-            for i = 0  then (+ i 1)            
-            finally (return (list min min-idx))
-            do
-            (when (and s (> s 0) )
-              (when (not min)
-                (setf min s)
-                (setf min-idx i))
-              (when (> min s)
-                (setf min s )
-                (setf min-idx i ))))
-      ;; return the id of minimum slackness
-      ;; nil if there is no minimum 
-      min-idx)))
+    ;;(make-s/equation :equation (aref A entering-idx))
+
+    ;; After having chosen the entering variable we must pick the
+    ;; leaving variable equation to be one with the tightest
+    ;; constraints
+    ;; find the slackness of all basic variables
+
+    (loop for basic-variable in B
+          for constant = (aref b basic-variable)
+          for coefficient = (* -1  (table/at A  basic-variable entering-idx ))
+          do
+          (if (>  coefficient 0)
+              (aset slackness basic-variable
+                    (/ constant coefficient))))
+
+    ;; return index of min slackness non-zero positive
+    (an/vector:find-min-idx slackness 'non-nil? 'non-zero-positive?))
+  )
 
 (cl-defmethod s/pivot ((lp s/lp) e l test)
   "Will pivot be changing the roles of entering and leaving
 variables"
-  (let* ((A  (oref lp A))  ;; Input equation coefficents
+  (let* (
+         (A  (oref lp A))  ;; Input equation coefficents
          (b  (oref lp b))  ;; Constant coefficients
          (c  (oref lp c))  ;; Objective function coefficents
          (v  (oref lp v))  ;; Objecive constnat coefficent
@@ -584,44 +562,201 @@ variables"
   (assignment nil)
   (max 0))
 
-(cl-defmethod s/simplex ((lp s/lp))
-  (let* ((break nil)
-         (ret-assignment (an/make-vector-shape b 0) ))
+
+(cl-defmethod s/simplex-pivot-till-opt ((lp s/lp))
+  "Keep pivoting on variables till there are no more positive
+coefficients in the objective function."
+  (catch 'done
+    (let ((pivot-result lp))
+      (while  (s/lp-objective-contains-positive-coefficients? pivot-result)
+        (setq entering-idx  (s/pick-entering-idx pivot-result))
+        (setq leaving-idx   (s/pick-leaving-idx pivot-result entering-idx))
+        (if (or (not leaving-idx ) (not entering-idx))
+            (throw 'done pivot-result)
+          (setq pivot-result (s/pivot pivot-result entering-idx leaving-idx nil))))      
+      pivot-result)))
+
+(cl-defmethod s/lp-basic-solution ((lp s/lp))
+  "Computes the basic solution by setting all basic variables to
+zero and computing values of corresponding non basic
+variables. Returns final assignment for all non-basic variables
+in the linear program."  
+  (loop with non-basic-set    =  (oref lp NB)
+        with b = (oref lp b)
+        with retval = (an/make-vector-shape b 0)        
+        for i in non-basic-set  do  (aset retval i (aref b i))
+        finally return retval))
+
+;; TODO: Assumes non-basic set gets sequential (0..n) numbering
+(cl-defmethod s/lp-objective-value ((lp s/lp) assignment)
+  (loop with sum = (oref lp v)
+        for obj-coeff across (oref lp c) 
+        for i = 0 then (+ i 1)
+        for value = (aref assignment i)
+        if (and value obj-coeff )
+        do
+        (incf sum (* obj-coeff value))
+        finally return sum))
+
+(cl-defmethod s/simplex ((lp s/lp) in-basic-form)
+  ""
+  ;; Keep pivoting till all coefficients in objective function are
+  ;; negative    
+  (setq lp (s/simplex-pivot-till-opt lp))
+  
+  (setq nb-assignment (s/lp-basic-solution lp))
+  (setq sum (s/lp-objective-value lp nb-assignment))
     
-    (while (and (not break )  (s/obj-has-postive-coefficients lp))
-      (setq entering-idx  (s/pick-entering-idx lp))
-      (setq leaving-idx  (s/pick-leaving-idx lp entering-idx))
-      (if (or (not leaving-idx ) (not entering-idx))
-          (setq break t)
-        (setq lp (s/pivot lp entering-idx leaving-idx nil))))    
+  (make-s/simplex-result
+   :assignment nb-assignment
+   :max  sum))
 
-    (loop for i in  (oref lp B) do
-         (aset ret-assignment i (aref  (oref lp b) i)))
+(cl-defmethod s/make-auxiliary-form ((lp s/lp))
+  "Creates an auxiliary form."
+  (let* ((A (oref lp A))
+         (b (oref lp b))
 
-    (let ((sum (oref lp v)))
-      (loop for obj across  (oref lp c)
-            for i = 0 then (+ i 1)
-            for res = (aref ret-assignment i)
-            if (and  obj res)  do
-            (setf sum (+ sum (* obj res))))
-      
-      (make-s/simplex-result
-       :assignment ret-assignment
-       :max  sum))))
-  
-  
-  
-  
-  
+         ;; Non-basic variables
+         (num-non-basic-variables  (length A))
+         (n num-non-basic-variables)
 
-(defun s/entering-eq-test ()
-    (setq A (vector
+         (num-basic-variables (length (aref A 0)))
+         (m num-basic-variables)
+
+         ;; In slack form all coefficients are negative
+         ;;(coefficient-matrix (table/negate A))
+         (coefficient-matrix A)
+
+         ;; Adding x_0 in slack form to all equations
+         (aux-col (an/vector:times [1] n))
+         (aux-coefficent-matrix (table/push-column aux-col coefficient-matrix))
+
+         ;; Objective function of -x_0
+         (aux-v 0)
+         (aux-c (an/vector:push-head
+                 -1 (make-vector m nil)))
+
+         ;; Adding to non-basic variables,
+         ;; need to preserve auxiliary form index
+         ;; x_0..x_{n-1}
+         (aux-NB (number-sequence 0 (- n 1)))
+
+         ;; total
+         (total (+ n m))
+
+         ;; Adding to basic variables x_n .. x_{n+m-1}
+         (aux-B (number-sequence n (- total 1))))
+
+
+    ;; Construct the auxiliary linear program
+    (s/lp
+     :A aux-coefficent-matrix
+     :b b
+     :c aux-c
+     :v 0
+     :NB aux-NB
+     :B aux-B)))
+
+
+
+(defun s/aux-test ()
+  (setq test-input
+        (s/lp :c  [3 1 2 0 0 0]
+              :b  [0 0 0 30 24 36]
+              :v 0
+              :NB '(0 1 2)
+              :B  '(3 4 5)
+              :A  (vector
                    [ nil  nil  nil  nil  nil  nil]
                    [ nil  nil  nil  nil  nil  nil]
                    [ nil  nil  nil  nil  nil  nil]
                    [   -1    -1    -3  nil  nil  nil]
                    [   -2    -2    -5  nil  nil  nil]
-                   [   -4    -1    -2  nil  nil  nil]))
+                   [   -4    -1    -2  nil  nil  nil])))
+  (s/make-auxiliary-form test-input))
+
+
+(cl-defmethod s/simplex-initialize ((lp s/lp))
+  "Initialize the simplex algorithm."
+
+  (let* ((A (oref l A))
+         (b (oref l b))
+         (c (oref l c))
+
+         ;; number of rows or the number of non-basic variables
+         (n (table/nrows A))
+
+         ;; number of columns or number of basic variables
+         (m (table/ncols A))
+
+         ;; total number of variables x_0..x_{m+n-1}
+         (total (+ m n))
+
+         ;; number non basic variables from 0 to (n-1)
+         ;; (x_0..x_{n-1})
+         (non-basic-variables (number-sequence 0 (- n 1)))
+
+         ;; number basic variables from n to (n+m-1)
+         ;; (x_n..x_{n+m-1})
+         (basic-variables (number-sequence n (- total 1))))
+
+    ;; Find the non-basic variable index with minimum coefficient
+    ;; set that variable to be the leaving variable.
+
+    (setq l (an/vector:min-index b))
+
+    ;; Already in basic form all constant-coefficents are positive
+    ;; l is index of non-basic with least constant coefficient
+    ;; if least constant constant is positive
+    (if (positive? (aref b l)) ;; return lp
+        ;; Already in basic form , return with our numbering for
+        ;; non-basic and basic variables.
+        (s/lp
+         ;; we use the negative form of A
+         :A A
+         :b b
+         :c c
+         :NB non-basic-variables
+         :B  basic-variables)
+
+      ;; If b[l] < 0 then we need to transform to basic from using
+      ;; pivot.
+      (let* ((auxiliary-form (s/make-auxiliary-form lp)))
+        
+        ;; pivot lp with 0 for entering and l for leaving index
+        ;; worried that auxiliary form messes up the laving variable index
+        ;; leaving varialbe is a non basic form index
+        (setq basic-form (s/pivot auxiliary-form l m))
+        
+        ;; Extract optimal and return values.
+        (let* ((optimized-aux-form (s/simplex-pivot-till-opt basic-form))
+               (opt-assignment (s/lp-basic-solution optimized-aux-form))
+               (opt-value (s/lp-objective-value optimized-aux-form opt-assignment)))
+          
+          (if (not (equal 0 opt-value))
+              nil ;; infeasible solution
+
+            ;; New slack form is feasible. Strip away the x_0 row
+            ;; (s/print basic-form)
+            
+            )))
+      ;; add    -x_0  -all equations in A
+      ;; using - x_0  -to left side of  A
+      )))
+
+
+
+
+
+(defun s/entering-eq-test ()
+  (setq A
+        (vector
+         [ nil  nil  nil  nil  nil  nil]
+         [ nil  nil  nil  nil  nil  nil]
+         [ nil  nil  nil  nil  nil  nil]
+         [   -1    -1    -3  nil  nil  nil]
+         [   -2    -2    -5  nil  nil  nil]
+         [   -4    -1    -2  nil  nil  nil]))
     (setq b   [nil nil nil 30 24 36])
     (setq NB   '(0 1 2))
     (setq B   '(3 4 5))
@@ -664,7 +799,7 @@ variables"
                    [   -2    -2    -5  nil  nil  nil]
                    [   -4    -1    -2  nil  nil  nil])))
   (setq input s/test-input)
-  (setq result  (s/simplex input))
+  (setq result  (s/simplex input t))
   (s/debug "\nResult:%s maximum:%f\n"
            (s/simplex-result-assignment result)
            (s/simplex-result-max result))
