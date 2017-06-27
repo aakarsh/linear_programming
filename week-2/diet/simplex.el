@@ -361,7 +361,7 @@
 (defun s/entering-eq-init (A b B NB
                              leaving   ;; Index of  leaving equation originally in non-basic set
                              entering) ;; Index of entering equation originally in basic set
-
+  ""
   (setq pivot (abs  (table/at A leaving entering)))
   (setq pivot-inverse  (/ 1.0 pivot))
 
@@ -375,11 +375,11 @@
     ;; entering equation will be scaled
     (setq entering-equation
           (an/vector:scale
-           (aref A leaving) pivot-inverse :in NB :skip entering))
+           (aref A leaving) pivot-inverse :in B :skip entering)) ;; basic variables are what need to be scaled
 
-    ;; basic variable
-    (loop for basic-variable  in B do
-          (aset entering-equation basic-variable nil))
+    ;; set non-basic variables to be nil
+    (loop for non-basic-variable  in NB do
+          (aset entering-equation non-basic-variable nil))
 
     (aset entering-equation entering nil)
     (aset entering-equation leaving (* -1.0 pivot-inverse))
@@ -389,7 +389,7 @@
 
 (defun s/substitue-into-equation (equation
                                   substitute-eq
-                                  non-basic-set
+                                  variable-set
                                   entering-idx
                                   leaving-idx)
   "Subsititute the substitute equation into equation"
@@ -402,17 +402,23 @@
 
     (setq entering-constant  (s/equation-constant substitute-eq))
     (setq entering-eq  (s/equation-equation substitute-eq))
-
+    
+    (if (not  current-constant)
+        (setq current-constant 0))
+    
     (setq return-constant
           (+ current-constant  (* entering-var-coefficient entering-constant)))
-
-    (loop for variable in non-basic-set
+    
+    (loop for variable in variable-set
           if (not (equal variable entering-idx))
           do
           ;; iterate through variables in entering equation
           ;; check current coefficient of the variable
           (let ((current-coefficient  (aref current-equation variable))
                 (substitute-coefficient (aref entering-eq variable)))
+
+            (if (not substitute-coefficient)
+                (setq substitute-coefficient 0))
 
             ;; Present in current coefficent
             (if current-coefficient
@@ -440,7 +446,7 @@
 (cl-defmethod s/pick-entering-idx ((lp  s/lp))
   "Pick entering index to be one wish the first non-negative value in objective function"
   (an/list:find-first
-   (oref lp NB)  (lambda (var-idx) (s/posivitve-objective-coefficent lp var-idx))))
+   (oref lp B)  (lambda (var-idx) (s/posivitve-objective-coefficent lp var-idx))))
 
 
 (cl-defmethod s/lp-objective-contains-positive-coefficients? ((lp s/lp))
@@ -472,12 +478,12 @@ variables"
     ;; constraints
     ;; find the slackness of all basic variables
 
-    (loop for basic-variable in B
-          for constant = (aref b basic-variable)
-          for coefficient = (* -1  (table/at A  basic-variable entering-idx ))
+    (loop for non-basic-variable in NB
+          for constant = (aref b non-basic-variable)
+          for coefficient = (* -1  (table/at A  non-basic-variable entering-idx ))
           do
           (if (>  coefficient 0)
-              (aset slackness basic-variable
+              (aset slackness non-basic-variable
                     (/ constant coefficient))))
 
     ;; return index of min slackness non-zero positive
@@ -520,7 +526,7 @@ variables"
     (aset ret-A e (s/equation-equation entering-equation))
 
     ;; For every basic equation set-up
-    (loop for equation-idx in B
+    (loop for equation-idx in NB
           if (not (equal equation-idx l))
           do
           (setq current-equation
@@ -529,7 +535,7 @@ variables"
           (setq new-equation
                 (s/substitue-into-equation current-equation
                                            entering-equation
-                                           NB e l))
+                                           B e l))
           (setf (aref ret-A equation-idx ) (s/equation-equation new-equation))
           (setf (aref ret-b equation-idx ) (s/equation-constant new-equation)))
 
@@ -540,7 +546,7 @@ variables"
     (setq new-objective-equation
           (s/substitue-into-equation
            objective-equation entering-equation
-           NB e l))
+           B e l))
     ;;
     (setq ret-c (s/equation-equation new-objective-equation))
     (setq ret-v (s/equation-constant new-objective-equation))
@@ -615,35 +621,28 @@ in the linear program."
   "Creates an auxiliary form."
   (let* ((A (oref lp A))
          (b (oref lp b))
-
          ;; Non-basic variables
          (num-non-basic-variables  (length A))
          (n num-non-basic-variables)
 
          (num-basic-variables (length (aref A 0)))
          (m num-basic-variables)
-
          ;; In slack form all coefficients are negative
          ;;(coefficient-matrix (table/negate A))
          (coefficient-matrix A)
-
          ;; Adding x_0 in slack form to all equations
          (aux-col (an/vector:times [1] n))
          (aux-coefficent-matrix (table/push-column aux-col coefficient-matrix))
-
          ;; Objective function of -x_0
          (aux-v 0)
          (aux-c (an/vector:push-head
                  -1 (make-vector m nil)))
-
          ;; Adding to non-basic variables,
          ;; need to preserve auxiliary form index
          ;; x_0..x_{n-1}
          (aux-NB (number-sequence 0 (- n 1)))
-
          ;; total
          (total (+ n m))
-
          ;; Adding to basic variables x_n .. x_{n+m-1}
          (aux-B (number-sequence n (- total 1))))
 
@@ -675,35 +674,89 @@ in the linear program."
                    [   -4    -1    -2  nil  nil  nil])))
   (s/make-auxiliary-form test-input))
 
+(defun s/make-simplex (A b c)  
+  "Construct the simplex tableau from input constraints."
+  (catch 'done 
+    (let* ((nrows  (table/nrows A))
+           (ncols  (table/ncols A)) ;; number of non-basic variables
+           (nvars  (+ nrows ncols))
+           (simplex (an/make-table nvars nvars nil))
+           ;; standard slack form will be a square matrix [(nrows+ncols) x (nrows+ncols)]
+           ;; with entries of A negated , nil for all non basic columns
+           ;; b is expected to have 0 for unused coefficients and be of size nrows
+           ;; c is expected to have  
+           )
+    
+      ;; Copy over corresponding rows and columnts into simplex
+      (table/init simplex A)
+      ;; Corresponding entries are going to be negative for entries in A 
+      (table/negate simplex)      
+      ;; Make sure basic variables are in correct positions
+      (table/rshift simplex nrows)
+    
+      ;; Expan b to be size nrows+ncols while copying over
+      (setq simplex-b (make-vector nvars nil))
+      ;; copy over b into exteded vector
+      (an/vector:init simplex-b b)
+
+      ;; Expand c to the size of nvars
+      ;; TODO can't just do an copy need to shift by nvars
+      (setq simplex-c (make-vector nvars nil))
+      (an/vector:init simplex-c c)
+      (setf simplex-c (an/vector:rshift simplex-c nrows))
+    
+      ;; non-basic variables are numbered from 0 to nrows
+      (setq non-basic-variables (number-sequence 0 (- nrows 1)))
+      ;; basic variables are numbered from nrows to nvars
+      (setq basic-variables     (number-sequence nrows (- nvars 1) ))
+
+      ;; find index of non nil b
+      (setq leaving-idx (an/vector:find-min-idx simplex-b 'non-nil?))
+      (setq leaving-coeff (aref simplex-b leaving-idx))
+      (if (positive? leaving-coeff)
+          (throw 'done (s/lp :A simplex
+                             :b simplex-b
+                             :c simplex-c
+                             :NB non-basic-variables
+                             :B basic-variables)))
+      
+      )))
+
+
 
 (cl-defmethod s/simplex-initialize ((lp s/lp))
   "Initialize the simplex algorithm."
+  (let* ((A  (oref lp A))
+         (b  (oref lp b))
+         (c  (oref lp c))
+         (NB (oref lp NB))
+         (B  (oref lp B))
 
-  (let* ((A (oref l A))
-         (b (oref l b))
-         (c (oref l c))
+         ;; Number of non-basic variables
+         (n (length NB))
 
-         ;; number of rows or the number of non-basic variables
-         (n (table/nrows A))
-
-         ;; number of columns or number of basic variables
-         (m (table/ncols A))
+         ;; Number of basic variables
+         (m (length B))
 
          ;; total number of variables x_0..x_{m+n-1}
          (total (+ m n))
 
+         ;; THIS IS WRONG NEED TO COMPUTE
+         ;; SIZE OF NON BASIC AND BASIC SETS
+
          ;; number non basic variables from 0 to (n-1)
          ;; (x_0..x_{n-1})
-         (non-basic-variables (number-sequence 0 (- n 1)))
+         ;; (non-basic-variables (number-sequence 0 (- n 1)))
 
          ;; number basic variables from n to (n+m-1)
          ;; (x_n..x_{n+m-1})
-         (basic-variables (number-sequence n (- total 1))))
+         ;;x(basic-variables (number-sequence n (- total 1)))
+         )
 
     ;; Find the non-basic variable index with minimum coefficient
     ;; set that variable to be the leaving variable.
 
-    (setq l (an/vector:min-index b))
+    (setq l (an/vector:find-min-idx b 'non-nil?))
 
     ;; Already in basic form all constant-coefficents are positive
     ;; l is index of non-basic with least constant coefficient
@@ -711,13 +764,7 @@ in the linear program."
     (if (positive? (aref b l)) ;; return lp
         ;; Already in basic form , return with our numbering for
         ;; non-basic and basic variables.
-        (s/lp
-         ;; we use the negative form of A
-         :A A
-         :b b
-         :c c
-         :NB non-basic-variables
-         :B  basic-variables)
+        (s/lp  :A A  :b b  :c c  :NB NB   :B  B)
 
       ;; If b[l] < 0 then we need to transform to basic from using
       ;; pivot.
@@ -726,27 +773,70 @@ in the linear program."
         ;; pivot lp with 0 for entering and l for leaving index
         ;; worried that auxiliary form messes up the laving variable index
         ;; leaving varialbe is a non basic form index
-        (setq basic-form (s/pivot auxiliary-form l m))
+        (setq basic-form (s/pivot auxiliary-form l m nil))
         
         ;; Extract optimal and return values.
         (let* ((optimized-aux-form (s/simplex-pivot-till-opt basic-form))
                (opt-assignment (s/lp-basic-solution optimized-aux-form))
                (opt-value (s/lp-objective-value optimized-aux-form opt-assignment)))
           
-          (if (not (equal 0 opt-value))
+          (if (not (equal 0 opt-value)) ;; x_0 is non negative
               nil ;; infeasible solution
 
-            ;; New slack form is feasible. Strip away the x_0 row
+            ;; New slack form is feasible  strip away the x_0 row
+            ;;
+            ;; TODO: I am not sure where x_0 will lie in the basic form. 
             ;; (s/print basic-form)
             
+            ;; x_0 is in basic set-? can be removed
+            ;; subsititue non basic variables into objective function
+            ;; return.
+            
+            ;; (s/lp
+            ;;  :A (table/pop-row basic-form 0 ) ;; is row 0 corresponding to it?
+            ;;  :b (oref basic-form b)
+            ;;  :c (oref lp c) ;; restore original objective function
+            ;;  :v (oref lp v) ;; restore original objective function
+            ;;  :NB (oref basic-form :NB) ;; TODO remove 0 from the basic form
+            ;;  :B (oref basic-form :B)   ;; TODO remove x_0?
+            ;;  )
             )))
+      
       ;; add    -x_0  -all equations in A
       ;; using - x_0  -to left side of  A
       )))
 
+(defun s/test-initialize-simplex-simple ()
+  (setq A
+        (vector
+         [ 2    -1 ]
+         [ 1    -5 ]))
+  (setq b [ 2 -4])
+  (setq c [ 2 -1 ])
+  (setq v 0)
+  ()
 
+  (s/print basic-lp))
 
+(defun s/test-initialize-simplex ()
+  (setq A
+        (vector
+         [ nil  nil  nil  nil]
+         [ nil  nil  nil  nil]
+         [ -2    1   nil  nil]
+         [ -1    5   nil  nil]))
+  (setq b [nil nil 2 -4])
+  (setq c [2 -1 nil nil])
+  (setq v 0)
+  (setq non-basic-lp (s/lp :A A :b b :c c :v v :NB '(2 3) :B '(0 1)))
+  (setq basic-lp  (s/simplex-initialize non-basic-lp))
+  (s/print basic-lp))
 
+;;  z = 2*x_1 - x_2
+;;  x_3 = 2 - 2*x_1 + x_2
+;;  x_4 = -4 - x_1 + 5*x_2
+;;  A = [nil nil nil nil
+;;       ]
 
 (defun s/entering-eq-test ()
   (setq A
@@ -783,6 +873,26 @@ in the linear program."
       objective-equation  sub-equation  (list 0 1 2)  0 5))
 
 
+
+(defun s/test2()
+  
+  (setq s/test-input
+        (s/make-simplex
+         (vector          
+          [   1    1    3]
+          [   2    2    5]
+          [   4    1    2])
+         [30 24 36]
+         [3 1 2]))
+  
+  (setq input s/test-input)
+  (setq result  (s/simplex input t))
+  (s/debug "\nResult:%s maximum:%f\n"
+           (s/simplex-result-assignment result)
+           (s/simplex-result-max result))
+  (if result
+      (s/simplex-result-max result)
+    nil))
 
 (defun s/test()
   (setq s/test-input
