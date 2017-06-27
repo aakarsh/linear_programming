@@ -410,8 +410,7 @@
           (+ current-constant  (* entering-var-coefficient entering-constant)))
     
     (loop for variable in variable-set
-          if (not (equal variable entering-idx))
-          do
+          if (not (equal variable entering-idx)) do
           ;; iterate through variables in entering equation
           ;; check current coefficient of the variable
           (let ((current-coefficient  (aref current-equation variable))
@@ -544,18 +543,18 @@ variables"
           (make-s/equation :equation c :constant v))
     ;; Subsitute the entering equation into objective function
     (setq new-objective-equation
-          (s/substitue-into-equation
-           objective-equation entering-equation
+          (s/substitue-into-equation objective-equation entering-equation
            B e l))
     ;;
     (setq ret-c (s/equation-equation new-objective-equation))
     (setq ret-v (s/equation-constant new-objective-equation))
     ;;
-    (an/set-replace! NB-set e l)
-    (an/set-replace! B-set  l e)
+    (an/set-replace! NB-set l e)
+    (an/set-replace! B-set  e l)
     ;;
     (setq NB (an/set-list NB-set :sort '<))
     (setq B  (an/set-list B-set :sort '<))
+    
     ;; 5. Create the pivoted instance of the LP
     (s/lp :NB NB
           :B  B
@@ -958,3 +957,20 @@ in the linear program."
 
 (ert-deftest s/test-02()
   (should (s/read-input (concat s/test-dir "/tests/02"))))
+
+(ert-deftest s/test-simplex-feasible-start ()
+  (setq test
+        (s/make-simplex
+         (vector          
+          [   1    1    3]
+          [   2    2    5]
+          [   4    1    2])
+         [30 24 36]
+         [3 1 2]))
+  (setq result  (s/simplex test nil))
+  (s/debug "\nResult:%s maximum:%f\n"
+           (s/simplex-result-assignment result)
+           (s/simplex-result-max result))
+  (should (equal 28.0 (s/simplex-result-max result))))
+
+
