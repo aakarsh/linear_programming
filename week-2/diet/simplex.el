@@ -390,53 +390,68 @@
     (make-s/equation :equation entering-equation
                      :constant entering-constant))
 
-(defun s/substitue-into-equation (equation
+(defun s/substitute-into-equation (equation
                                   substitute-eq
-                                  variable-set
                                   entering-idx
-                                  leaving-idx)
-  "Subsititute the substitute equation into equation"
-  (let* ((current-equation (s/equation-equation equation))
-         (current-constant (s/equation-constant equation))
-         (entering-var-coefficient (aref current-equation entering-idx))
-         (return-constant nil)
-         (return-equation
-          (make-vector (length current-equation) nil)))
+                                  ;;leaving-idx
+                                  )  
+  "Subsititute the substitute equation into "
+  (catch 'return  
+    (let* ((current-equation (s/equation-equation equation))
+           (current-constant (s/equation-constant equation))
+           (entering-var-coefficient (aref current-equation entering-idx))
+           (return-constant nil)
+           (return-equation
+            (make-vector (length current-equation) nil)))
 
-    (setq entering-constant  (s/equation-constant substitute-eq))
-    (setq entering-eq  (s/equation-equation substitute-eq))
-    
-    (if (not  current-constant)
-        (setq current-constant 0))
-    
-    (setq return-constant
-          (+ current-constant  (* entering-var-coefficient entering-constant)))
-    
-    (loop for variable in variable-set
-          if (not (equal variable entering-idx)) do
-          ;; iterate through variables in entering equation
-          ;; check current coefficient of the variable
-          (let ((current-coefficient  (aref current-equation variable))
-                (substitute-coefficient (aref entering-eq variable)))
+      ;; No substitution to perform
+      (if  (or (not entering-var-coefficient)
+               (equal 0.0 entering-var-coefficient))
+          (throw 'return equation))
+      
+      (setq entering-constant  (s/equation-constant substitute-eq))
+      (setq entering-eq  (s/equation-equation substitute-eq))
 
-            (if (not substitute-coefficient)
-                (setq substitute-coefficient 0))
+      (if (not  current-constant)
+          (setq current-constant 0))
 
-            ;; Present in current coefficent
-            (if current-coefficient
-                (aset return-equation variable
-                      (+ current-coefficient
-                         (* entering-var-coefficient substitute-coefficient)))
-              ;; no current-coefficient
-              (aset return-equation variable (* entering-var-coefficient substitute-coefficient)))
-            ))
+      (setq return-constant
+            (+ current-constant  (* entering-var-coefficient entering-constant)))
 
-    (aset return-equation leaving-idx
-                       (* entering-var-coefficient (aref entering-eq leaving-idx)))
+      (loop for variable in (number-sequence 0 (-  (length current-equation) 1) ) ;;variable-set
+            for current-coefficient    =  (aref current-equation variable)
+            for substitute-coefficient =  (aref entering-eq variable)
+            if (and  (not (equal variable entering-idx))
+                     (or current-coefficient
+                         substitute-coefficient))
+            do
+            ;; iterate through variables in entering equation
+            ;; check current coefficient of the variable
+            (let ((current-coefficient  (aref current-equation variable))
+                  (substitute-coefficient (aref entering-eq variable)))
 
-    ;; return the substituted equations
-    (make-s/equation :equation return-equation
-                     :constant return-constant)))
+              (if (not substitute-coefficient)
+                  (setq substitute-coefficient 0))
+
+              ;; Present in current coefficent
+              (if current-coefficient
+                  (aset return-equation variable
+                        (+ current-coefficient
+                           (* entering-var-coefficient substitute-coefficient)))
+                ;; no current-coefficient
+                (aset return-equation variable (* entering-var-coefficient substitute-coefficient)))
+              ))
+      
+      ;; When we dont't know this
+      ;; TODO : Why can i comment this code and it makes no difference ???
+      ;; (if leaving-idx
+      ;;     (aset return-equation leaving-idx
+      ;;           (* entering-var-coefficient
+      ;;              (aref entering-eq leaving-idx))))
+
+      ;; return the substituted equations
+      (make-s/equation :equation return-equation
+                       :constant return-constant))))
 
 (cl-defmethod s/posivitve-objective-coefficent  ((lp  s/lp) variable-idx)
   "Pick entering index to be one wish the first non-negative value in objective function"
@@ -459,7 +474,7 @@
   "Defines variable's slackness as -constant/coefficient in the equation"
   (let* ((equation   (s/equation-equation eq))
          (constant   (s/equation-constant eq))
-         (coefficient (* -1 (aref equation var-idx))))    
+         (coefficient (* -1 (aref equation var-idx))))
     (if (> coefficient 0)
         (/ constant constant)
       nil)))
@@ -535,20 +550,25 @@ variables"
                 (make-s/equation :equation (aref A equation-idx)
                                  :constant (aref b equation-idx)))
           (setq new-equation
-                (s/substitue-into-equation current-equation
-                                           entering-equation
-                                           INDEPENDENT e l))
+                (s/substitute-into-equation current-equation
+                                            entering-equation
+                                            e
+                                            ;;l
+                                            ))
+          
           (setf (aref ret-A equation-idx ) (s/equation-equation new-equation))
           (setf (aref ret-b equation-idx ) (s/equation-constant new-equation)))
 
     ;; For the objective equation
     (setq objective-equation
           (make-s/equation :equation c :constant v))
-    
+
     ;; Subsitute the entering equation into objective function
     (setq new-objective-equation
-          (s/substitue-into-equation objective-equation entering-equation
-           INDEPENDENT e l))
+          (s/substitute-into-equation objective-equation entering-equation
+                                      e
+                                      ;;l
+                                      ))
     ;;
     (setq ret-c (s/equation-equation new-objective-equation))
     (setq ret-v (s/equation-constant new-objective-equation))
@@ -558,7 +578,7 @@ variables"
     ;;
     (setq DEPENDENT (an/set-list DEPENDENT-set :sort '<))
     (setq INDEPENDENT  (an/set-list INDEPENDENT-set :sort '<))
-    
+
     ;; 5. Create the pivoted instance of the LP
     (s/lp :DEPENDENT DEPENDENT
           :INDEPENDENT  INDEPENDENT
@@ -582,24 +602,24 @@ coefficients in the objective function."
         (setq leaving-idx   (s/pick-leaving-idx pivot-result entering-idx))
         (if (or (not leaving-idx ) (not entering-idx))
             (throw 'done pivot-result)
-          (setq pivot-result (s/pivot pivot-result entering-idx leaving-idx nil))))      
+          (setq pivot-result (s/pivot pivot-result entering-idx leaving-idx nil))))
       pivot-result)))
 
 (cl-defmethod s/lp-basic-solution ((lp s/lp))
   "Computes the basic solution by setting all basic variables to
 zero and computing values of corresponding non basic
 variables. Returns final assignment for all non-basic variables
-in the linear program."  
+in the linear program."
   (loop with non-basic-set    =  (oref lp DEPENDENT)
         with b = (oref lp b)
-        with retval = (an/make-vector-shape b 0)        
+        with retval = (an/make-vector-shape b 0)
         for i in non-basic-set  do  (aset retval i (aref b i))
         finally return retval))
 
 ;; TODO: Assumes non-basic set gets sequential (0..n) numbering
 (cl-defmethod s/lp-objective-value ((lp s/lp) assignment)
   (loop with sum = (oref lp v)
-        for obj-coeff across (oref lp c) 
+        for obj-coeff across (oref lp c)
         for i = 0 then (+ i 1)
         for value = (aref assignment i)
         if (and value obj-coeff )
@@ -610,12 +630,12 @@ in the linear program."
 (cl-defmethod s/simplex ((lp s/lp) in-basic-form)
   ""
   ;; Keep pivoting till all coefficients in objective function are
-  ;; negative    
+  ;; negative
   (setq lp (s/simplex-pivot-till-opt lp))
-  
+
   (setq nb-assignment (s/lp-basic-solution lp))
   (setq sum (s/lp-objective-value lp nb-assignment))
-    
+
   (make-s/simplex-result
    :assignment nb-assignment
    :max  sum))
@@ -624,13 +644,13 @@ in the linear program."
   "Creates an auxiliary form."
   (let* ((A (oref lp A))
          (b (oref lp b))
-         
+
          (DEPENDENT (oref lp DEPENDENT))
          (INDEPENDENT (oref lp INDEPENDENT))
-         
+
          (n (length DEPENDENT))
          (m (length INDEPENDENT))
-         
+
          (nvars (+ n m))
 
          ;; Adding x_0 in slack form to all equations
@@ -653,15 +673,15 @@ in the linear program."
 
     ;;(aux-coefficent-matrix (table/append-column A aux-col))
     (setq aux-simplex  (an/make-table (+ nvars 1) (+ nvars 1) nil))
-    
+
     ;; Copy in A add a column with 1 as coeffient at position x_nvars
     (table/init aux-simplex A)
-    
+
     (loop for i from 0 to nvars
           do
           (table/setf aux-simplex i nvars 1))
-    
-    
+
+
     ;; Construct the auxiliary linear program
     (s/lp
      :A aux-simplex
@@ -689,9 +709,9 @@ in the linear program."
                    [   -4    -1    -2  nil  nil  nil])))
   (s/make-auxiliary-form test-input))
 
-(defun s/make-simplex (A b c)  
+(defun s/make-simplex (A b c)
   "Construct the simplex tableau from input constraints."
-  (catch 'done 
+  (catch 'done
     (let* ((nrows  (table/nrows A))
            (ncols  (table/ncols A)) ;; number of non-basic variables
            (nvars  (+ nrows ncols))
@@ -699,15 +719,15 @@ in the linear program."
            ;; standard slack form will be a square matrix [(nrows+ncols) x (nrows+ncols)]
            ;; with entries of A negated , nil for all non basic columns
            ;; b is expected to have 0 for unused coefficients and be of size nrows
-           ;; c is expected to have  
+           ;; c is expected to have
            )
-    
+
       ;; Copy over corresponding rows and columnts into simplex
       (table/init simplex A)
-      ;; Corresponding entries are going to be negative for entries in A 
-      (table/negate simplex)      
+      ;; Corresponding entries are going to be negative for entries in A
+      (table/negate simplex)
       ;; Make sure basic variables are in correct positions
-      (table/rshift simplex nrows)    
+      (table/rshift simplex nrows)
       ;; Expand b to be size nrows+ncols while copying over
       (setq simplex-b (make-vector nvars nil))
       ;; Copy over b into exteded vector
@@ -717,7 +737,7 @@ in the linear program."
       (setq simplex-c (make-vector nvars nil))
       (an/vector:init simplex-c c)
       (setf simplex-c (an/vector:rshift simplex-c nrows))
-    
+
       ;; Non-basic variables are numbered from 0 to nrows
       (setq non-basic-variables (number-sequence 0 (- nrows 1)))
       ;; INDEPENDENTasic variables are numbered from nrows to nvars
@@ -734,9 +754,8 @@ in the linear program."
                   :INDEPENDENT  basic-variables))
       (if (positive? leaving-coeff)
           (throw 'done initial-lp))
-      
-      ;; TODO: Cannot use simple translation need to check for
-      ;; infeasibility!
+
+
       ;;
       ;; Seem to keep messing up basic and non-basic terminology for
       ;; now keep basic solution to be one where basic variables are
@@ -744,11 +763,11 @@ in the linear program."
       ;;
       ;;Using terminalogy of independent variables appear in right
       ;; side of constraints.
-      
+
       (setq aux-form
             (s/make-auxiliary-form initial-lp))
 
-      ;; TODO: Objective Function Is Not Correct!
+
       (setq feasible-aux-form
             (s/pivot aux-form nvars leaving-idx  nil))
       ;;
@@ -764,125 +783,56 @@ in the linear program."
       (if (not (equal opt-value 0.0)) ;; infeasible
           (throw 'done nil))
 
-      ;; subsitution
-      t
-      )))
+      (when (not (equal (float (aref assignment nvars)) 0.0)) ;; infeasible
+        (message "x_%d not assigned 0" (aref assignment nvars))
+        (throw 'done nil))
 
-
-
-(cl-defmethod s/simplex-initialize ((lp s/lp))
-  "Initialize the simplex algorithm."
-  (let* ((A  (oref lp A))
-         (b  (oref lp b))
-         (c  (oref lp c))
-         (DEPENDENT (oref lp DEPENDENT))
-         (INDEPENDENT  (oref lp INDEPENDENT))
-
-         ;; Number of non-basic variables
-         (n (length DEPENDENT))
-
-         ;; Number of basic variables
-         (m (length INDEPENDENT))
-
-         ;; total number of variables x_0..x_{m+n-1}
-         (total (+ m n))
-
-         ;; THIS IS WRONG NEED TO COMPUTE
-         ;; SIZE OF NON INDEPENDENTASIC AND INDEPENDENTASIC SETS
-
-         ;; number non basic variables from 0 to (n-1)
-         ;; (x_0..x_{n-1})
-         ;; (non-basic-variables (number-sequence 0 (- n 1)))
-
-         ;; number basic variables from n to (n+m-1)
-         ;; (x_n..x_{n+m-1})
-         ;;x(basic-variables (number-sequence n (- total 1)))
-         )
-
-    ;; Find the non-basic variable index with minimum coefficient
-    ;; set that variable to be the leaving variable.
-
-    (setq l (an/vector:find-min-idx b 'non-nil?))
-
-    ;; Already in basic form all constant-coefficents are positive
-    ;; l is index of non-basic with least constant coefficient
-    ;; if least constant constant is positive
-    (if (positive? (aref b l)) ;; return lp
-        ;; Already in basic form , return with our numbering for
-        ;; non-basic and basic variables.
-        (s/lp  :A A  :b b  :c c  :DEPENDENT DEPENDENT   :INDEPENDENT  INDEPENDENT)
-
-      ;; If b[l] < 0 then we need to transform to basic from using
-      ;; pivot.
-      (let* ((auxiliary-form (s/make-auxiliary-form lp)))
+      ;; TODO: Need to perform substitution here. For each depedendent
+      ;; variable in the original objective function subsititute its
+      ;; equation.
+      ;;
+      ;; TODO:
+      ;; subsitite all dependent equations into objective
+      ;; why does subsititution require knowing leaving idx ?
+      ;;
+      ;; Subsitite all dependent variables into objective function
+      ;;
+      (let ((objective  (make-s/equation
+                                   :equation (oref initial-lp :c)
+                                   :constant (oref initial-lp :v)) ))
+        (loop for i in (oref optimal-aux-form  :DEPENDENT)
+              for current-equation = (aref (oref optimal-aux-form :A) i)
+              for current-constant = (aref (oref optimal-aux-form :b) i)
+              do            
+              (setq objective
+                    (s/substitute-into-equation  objective
+                                                 (make-s/equation :equation current-equation
+                                                                  :constant current-constant)
+                                                 i)))
         
-        ;; pivot lp with 0 for entering and l for leaving index
-        ;; worried that auxiliary form messes up the laving variable index
-        ;; leaving varialbe is a non basic form index
-        (setq basic-form (s/pivot auxiliary-form l m nil))
-        
-        ;; Extract optimal and return values.
-        (let* ((optimized-aux-form (s/simplex-pivot-till-opt basic-form))
-               (opt-assignment (s/lp-basic-solution optimized-aux-form))
-               (opt-value (s/lp-objective-value optimized-aux-form opt-assignment)))
-          
-          (if (not (equal 0 opt-value)) ;; x_0 is non negative
-              nil ;; infeasible solution
-
-            ;; New slack form is feasible  strip away the x_0 row
-            ;;
-            ;; TODO: I am not sure where x_0 will lie in the basic form. 
-            ;; (s/print basic-form)
-            
-            ;; x_0 is in basic set-? can be removed
-            ;; subsititue non basic variables into objective function
-            ;; return.
-            
-            ;; (s/lp
-            ;;  :A (table/pop-row basic-form 0 ) ;; is row 0 corresponding to it?
-            ;;  :b (oref basic-form b)
-            ;;  :c (oref lp c) ;; restore original objective function
-            ;;  :v (oref lp v) ;; restore original objective function
-            ;;  :DEPENDENT (oref basic-form :DEPENDENT) ;; TODO remove 0 from the basic form
-            ;;  :INDEPENDENT (oref basic-form :INDEPENDENT)   ;; TODO remove x_0?
-            ;;  )
-            )))
       
-      ;; add    -x_0  -all equations in A
-      ;; using - x_0  -to left side of  A
-      )))
+      ;; After subsititing remove the x_nvars variable
+      ;; Return new augmented matrix
+      ;; Assuming -x_0 is an INDEPENDENT variable for now.
+      
+      ;; x_nvars will be last variable and last column
+      
+        (setq n (length (oref optimal-aux-form :DEPENDENT)))
+        (setq m (length (oref optimal-aux-form :INDEPENDENT)))
+        (setq total (+ n m))
+        (s/lp :A (table/sub-table
+                  (oref optimal-aux-form :A)
+                  (- total 1)
+                  (- total 1))
+              :DEPENDENT (oref optimal-aux-form :DEPENDENT)
+              :INDEPENDENT (oref optimal-aux-form :INDEPENDENT)
+              :b (an/vector:sub-vector  (oref optimal-aux-form :b) 0 (- total 1))
+              :c (an/vector:sub-vector  (s/equation-equation  objective) 0 (- total 1))
+              :v (s/equation-constant objective))))))
 
-(defun s/test-initialize-simplex-simple ()
-  (setq A
-        (vector
-         [ 2    -1 ]
-         [ 1    -5 ]))
-  (setq b [ 2 -4])
-  (setq c [ 2 -1 ])
-  (setq v 0)
-  ()
 
-  (s/print basic-lp))
 
-(defun s/test-initialize-simplex ()
-  (setq A
-        (vector
-         [ nil  nil  nil  nil]
-         [ nil  nil  nil  nil]
-         [ -2    1   nil  nil]
-         [ -1    5   nil  nil]))
-  (setq b [nil nil 2 -4])
-  (setq c [2 -1 nil nil])
-  (setq v 0)
-  (setq non-basic-lp (s/lp :A A :b b :c c :v v :DEPENDENT '(2 3) :INDEPENDENT '(0 1)))
-  (setq basic-lp  (s/simplex-initialize non-basic-lp))
-  (s/print basic-lp))
 
-;;  z = 2*x_1 - x_2
-;;  x_3 = 2 - 2*x_1 + x_2
-;;  x_4 = -4 - x_1 + 5*x_2
-;;  A = [nil nil nil nil
-;;       ]
 
 (defun s/entering-eq-test ()
   (setq A
@@ -908,29 +858,29 @@ in the linear program."
          :constant 9
          :equation  [nil -.25 -.5  nil nil -.25 ]))
    ;;
-   (s/substitue-into-equation
+   (s/substitute-into-equation
     main-equation sub-equation (list 0 1 2) 0 5)
    ;;
    (setq objective-equation
          (make-s/equation :equation  [ 3  1  2 nil nil nil nil]
                           ;; x_1 x_2 x_3 x_4 x_4 x_5
                           :constant 0))
-   (s/substitue-into-equation
+   (s/substitute-into-equation
       objective-equation  sub-equation  (list 0 1 2)  0 5))
 
 
 
 (defun s/test2()
-  
+
   (setq s/test-input
         (s/make-simplex
-         (vector          
+         (vector
           [   1    1    3]
           [   2    2    5]
           [   4    1    2])
          [30 24 36]
          [3 1 2]))
-  
+
   (setq input s/test-input)
   (setq result  (s/simplex input t))
   (s/debug "\nResult:%s maximum:%f\n"
@@ -1008,7 +958,7 @@ in the linear program."
 (ert-deftest s/test-simplex-feasible-start ()
   (setq test
         (s/make-simplex
-         (vector          
+         (vector
           [   1    1    3]
           [   2    2    5]
           [   4    1    2])
@@ -1017,7 +967,7 @@ in the linear program."
   (setq result  (s/simplex test nil))
   (s/debug "\nResult:%s\nMaximum:%f\n"
            (s/simplex-result-assignment result)
-           (s/simplex-result-max result))  
+           (s/simplex-result-max result))
   (should (equal 28.0 (s/simplex-result-max result)))
   (should (an/vector:equal [18.0 0 0 8.0 4.0 0]
                            (s/simplex-result-assignment result))))
@@ -1026,21 +976,18 @@ in the linear program."
 (ert-deftest s/test-simplex-infeasible-start ()
   (setq test
         (s/make-simplex
-         (vector          
+         (vector
           [   2    -1 ]
-          [   1    -5 ])         
+          [   1    -5 ])
          [2 -4]
          [2 -1]))
   (should test)
-;;  (setq result  (s/simplex test nil))
-;;  (message  "\nResult:%s\nMaximum:%f\n"
-;;           (s/simplex-result-assignment result)
-;;           (s/simplex-result-max result))  
-  ;;  (should (equal 28.0 (s/simplex-result-max result)))
-  ;; (should (an/vector:equal [18.0 0 0 8.0 4.0 0]
-  ;;                           (s/simplex-result-assignment result)))
-  )
+  (setq result  (s/simplex test nil))
+  (message  "\nResult:%s\nMaximum:%f\n"
+            (s/simplex-result-assignment result)
+            (s/simplex-result-max result))
+  (should (equal 2.0 (s/simplex-result-max result))))
 
 
-(ert 's/test-simplex-feasible-start)
-(ert 's/test-simplex-infeasible-start )
+(ert "s/test-simplex" )
+
