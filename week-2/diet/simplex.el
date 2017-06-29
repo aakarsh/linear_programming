@@ -308,6 +308,41 @@
   "Representation in basic form of a linear program upon which we
   will be acting.")
 
+
+(defstruct s/equation
+  "Representation left hand side of a single lp constraint"
+  (equation nil)
+  (constant 0))
+
+(cl-defmethod s/lp:equation-setf ((lp s/lp) eq-idx equation)
+  (setf (aref (oref lp :A ) eq-idx) (s/equation-equation equation))
+  (setf (aref (oref lp :b ) eq-idx) (s/equation-constant equation)))
+
+(cl-defmethod s/lp:objective-setf ((lp s/lp) equation)
+  (setf (oref lp :c ) (s/equation-equation equation))
+  (setf (oref lp :v ) (s/equation-constant equation)))
+
+(cl-defmethod s/lp:equation-substitute ((lp s/lp) eq-idx equation entering-idx)
+  (let* ((current-equation  (s/lp:equation lp eq-idx) ))
+    (s/substitute-into-equation
+     current-equation entering-equation entering-idx)))
+
+(cl-defmethod s/lp:objective-substitute ((lp s/lp)  equation entering-idx)
+  (let* ((current-equation  (s/lp:objective-equation lp)))    
+    (s/substitute-into-equation
+     current-equation entering-equation entering-idx)))
+
+
+
+(cl-defmethod s/lp:equation ((lp s/lp) eq-idx)
+  (make-s/equation :equation (aref (oref lp :A) equation-idx)
+                   :constant (aref (oref lp :b) equation-idx)))
+
+(cl-defmethod s/lp:objective-equation ((lp s/lp))
+  (make-s/equation :equation (oref lp :c)
+                   :constant  (oref lp :v)))
+
+
 (defun s/lp:var-string (index-coefficient)
   (let ((index (car index-coefficient))
         (coefficient (cadr index-coefficient)))
@@ -351,15 +386,23 @@
     (loop for e in equations do
           (s/debug e))))
 
-(defstruct s/equation
-  "Representation for single equation"
-  (equation nil )
-  (constant 0))
+
+(cl-defmethod s/lp:entering-equation ((lp s/lp)  leaving entering)
+  (let* ((A  (oref lp A))  ;; Input equation coefficents
+         (b  (oref lp b))  ;; Constant coefficients
+         (c  (oref lp c))  ;; Objective function coefficents
+         (v  (oref lp v))  ;; Objecive constnat coefficent
+         (INDEPENDENT  (oref lp INDEPENDENT))  ;; Members of of the basic set
+         (DEPENDENT    (oref lp DEPENDENT)) ;; Members of the non-basic set)
+         )
+    (s/make-entering-equation A b INDEPENDENT DEPENDENT leaving entering)))
+
 
 (defun s/make-entering-equation (A b INDEPENDENT DEPENDENT
-                             leaving   ;; Index of  leaving equation originally in non-basic set
-                             entering) ;; Index of entering equation originally in basic set
+                                   leaving   ;; Index of  leaving equation originally in non-basic set
+                                   entering) ;; Index of entering equation originally in basic set
   ""
+
   (let* ((pivot-entry   (table/at A leaving entering))
          (pivot-value  (abs pivot-entry))
          (pivot-sign (if (> pivot-entry 0) -1 1))
@@ -513,59 +556,48 @@ variables"
          ;; Recomputed objective constant coefficent
          (ret-v 0)
          ;; Updated linear program
-         (ret-lp  (s/lp :INDEPENDENT INDEPENDENT :DEPENDENT DEPENDENT :b b :c c))
+         (ret-lp  (s/lp :A ret-A :b ret-b :c ret-c :v ret-v))
          ;; Leaving equation and entering's coefficent value
          (pivot-coefficient (table/at A l e)))
 
     ;; We will be dividing the leaving equation's coefficents
     ;; with the pivot coeffient
-    (setq entering-equation  (s/make-entering-equation A b INDEPENDENT DEPENDENT l e))
-
-    ;; construct new entering equation
-    (aset ret-b e (s/equation-constant entering-equation))
-    (aset ret-A e (s/equation-equation entering-equation))
-
+    ;; construct new entering equation    
+    (setq entering-equation  (s/lp:entering-equation lp l e))
+    
+    (s/lp:equation-setf ret-lp e entering-equation)
+    
     ;; For every basic equation set-up
     (loop for equation-idx in DEPENDENT
           if (not (equal equation-idx l))
           do
-          (setq current-equation
-                (make-s/equation :equation (aref A equation-idx)
-                                 :constant (aref b equation-idx)))
-          (setq new-equation
-                (s/substitute-into-equation current-equation entering-equation e))
-          
-          
-          (setf (aref ret-A equation-idx ) (s/equation-equation new-equation))
-          (setf (aref ret-b equation-idx ) (s/equation-constant new-equation)))
-
-    ;; For the objective equation
-    (setq objective-equation
-          (make-s/equation :equation c :constant v))
+          ;; save new equation
+          (s/lp:equation-setf ret-lp equation-idx
+                              (s/lp:equation-substitute lp equation-idx entering-equation e)))
 
     ;; Subsitute the entering equation into objective function
-    (setq new-objective-equation
-          (s/substitute-into-equation objective-equation entering-equation e))
+    (s/lp:objective-setf ret-lp
+                         (s/lp:objective-substitute lp entering-equation e))
+    
     
     (an/set-replace! DEPENDENT-set l e)
     (an/set-replace! INDEPENDENT-set  e l)
     
-    (setq DEPENDENT (an/set-list DEPENDENT-set :sort '<))
+    (setq DEPENDENT    (an/set-list DEPENDENT-set :sort '<))
     (setq INDEPENDENT  (an/set-list INDEPENDENT-set :sort '<))
 
     ;; 5. Create the pivoted instance of the LP
     (s/lp :DEPENDENT DEPENDENT
           :INDEPENDENT  INDEPENDENT
-          :A  ret-A
-          :b  ret-b
-          :c  (s/equation-equation new-objective-equation)
-          :v  (s/equation-constant new-objective-equation))))
+          :A  (oref ret-lp :A)
+          :b  (oref ret-lp :b)
+          :c  (oref ret-lp :c)
+          :v  (oref ret-lp :v))))
 
 
 (defstruct s/simplex-result
   (assignment nil)
   (max 0))
-
 
 (cl-defmethod s/simplex-pivot-till-opt ((lp s/lp))
   "Keep pivoting on variables till there are no more positive
@@ -793,18 +825,13 @@ in the linear program."
           (n (aref sizes 1)))
       (setf s/A (make-vector m nil))
       (loop for i from 0 below m do
-            (aset s/A i (an/buffer:fetch-lines-as-numbers
-                         ;;an/buffer:fetch-line-as-numbers
-                         )))
-      (setf s/b (an/buffer:fetch-lines-as-numbers
-                 ;;an/buffer:fetch-line-as-numbers
-                 ))
-      (setf s/objective (an/buffer:fetch-lines-as-numbers
-                         ;;an/buffer:fetch-line-as-numbers
-                         )))))
+            (aset s/A i (an/buffer:fetch-lines-as-numbers)))      
+      (setf s/b (an/buffer:fetch-lines-as-numbers))      
+      (setf s/objective (an/buffer:fetch-lines-as-numbers)))))
 
-(defvar s/test-dir "/home/aakarsh/src/MOOC/coursera/linear_programming/week-2/diet/")
 
+(defvar s/test-dir
+  "/home/aakarsh/src/MOOC/coursera/linear_programming/week-2/diet/")
 
 (defun s/aux-test ()
   (setq test-input
@@ -921,7 +948,6 @@ in the linear program."
   (should test)
   (setq result (s/simplex test nil))
   (should (not result)))
-
 
 (ert-deftest s/test-simplex-feasible-start ()
   (setq test
