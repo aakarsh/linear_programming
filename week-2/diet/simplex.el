@@ -595,13 +595,13 @@ variables"
 (cl-defmethod s/simplex-pivot-till-opt ((lp s/lp))
   "Keep pivoting on variables till there are no more positive
 coefficients in the objective function."
-  (catch 'done
+  (catch 'unbounded
     (let ((pivot-result lp))
       (while  (s/lp-objective-contains-positive-coefficients? pivot-result)
         (setq entering-idx  (s/pick-entering-idx pivot-result))
         (setq leaving-idx   (s/pick-leaving-idx pivot-result entering-idx))
         (if (or (not leaving-idx ) (not entering-idx))
-            (throw 'done pivot-result)
+            (throw 'unbounded nil)
           (setq pivot-result (s/pivot pivot-result entering-idx leaving-idx nil))))
       pivot-result)))
 
@@ -632,13 +632,15 @@ in the linear program."
   ;; Keep pivoting till all coefficients in objective function are
   ;; negative
   (setq lp (s/simplex-pivot-till-opt lp))
+  (if (not lp)
+      nil ;; unbounded
+    (progn
+      (setq nb-assignment (s/lp-basic-solution lp))
+      (setq sum (s/lp-objective-value lp nb-assignment))
+      (make-s/simplex-result
+       :assignment nb-assignment
+       :max  sum))))
 
-  (setq nb-assignment (s/lp-basic-solution lp))
-  (setq sum (s/lp-objective-value lp nb-assignment))
-
-  (make-s/simplex-result
-   :assignment nb-assignment
-   :max  sum))
 
 (cl-defmethod s/make-auxiliary-form ((lp s/lp))
   "Creates an auxiliary form."
@@ -900,23 +902,52 @@ in the linear program."
     nil))
 
 (defun s/read-input(input-file)
-  "Read in simplex from file."
+  "Read in simplex from file."  
   (with-temp-buffer
     (insert-file-contents input-file t)
     (goto-char 0)
-    (let*((sizes (an/buffer:fetch-line-as-numbers))
+    (let*((sizes (an/buffer:fetch-lines-as-numbers
+                  ;;an/buffer:fetch-line-as-numbers
+                  ))
           (m (aref sizes 0))
           (n (aref sizes 1)))
       (setf s/A (make-vector m nil))
       (loop for i from 0 below m do
-            (aset s/A i (an/buffer:fetch-line-as-numbers)))
-      (setf s/b (an/buffer:fetch-line-as-numbers))
-      (setf s/objective (an/buffer:fetch-line-as-numbers)))))
+            (aset s/A i (an/buffer:fetch-lines-as-numbers
+                         ;;an/buffer:fetch-line-as-numbers
+                         )))
+      (setf s/b (an/buffer:fetch-lines-as-numbers
+                 ;;an/buffer:fetch-line-as-numbers
+                 ))
+      (setf s/objective (an/buffer:fetch-lines-as-numbers
+                         ;;an/buffer:fetch-line-as-numbers
+                         )))))
 
-(defvar s/test-dir "/home/aakarsh/src/c++/coursera/linear_programming/week-2/diet")
+(defvar s/test-dir "/home/aakarsh/src/MOOC/coursera/linear_programming/week-2/diet/")
 
-(ert-deftest s/test-02()
-  (should (s/read-input (concat s/test-dir "/tests/02"))))
+(ert-deftest s/test-read-01()
+  (should (s/read-input (concat s/test-dir "/tests/01"))))
+
+(ert-deftest s/test-find-opt-01 ()
+  (s/read-input (concat s/test-dir "/tests/01"))  
+  (setq test (s/make-simplex s/A s/b s/objective))
+  (setq result (s/simplex test nil))
+  (s/debug "\nResult:%s\nMaximum:%f\n"
+           (s/simplex-result-assignment result)
+           (s/simplex-result-max result)))
+
+(ert-deftest s/test-find-opt-02 ()
+  (s/read-input (concat s/test-dir "/tests/02"))  
+  (setq test (s/make-simplex s/A s/b s/objective))
+  (should (not test)))
+
+(ert-deftest s/test-find-opt-03 ()
+  (s/read-input (concat s/test-dir "/tests/03"))  
+  (setq test (s/make-simplex s/A s/b s/objective))
+  (should test)
+  (setq result (s/simplex test nil))
+  (should (not result)))
+
 
 (ert-deftest s/test-simplex-feasible-start ()
   (setq test
@@ -953,4 +984,3 @@ in the linear program."
 
 
 (ert "s/test-simplex" )
-
