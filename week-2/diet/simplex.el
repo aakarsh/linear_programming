@@ -279,12 +279,10 @@
 (require 'cl)
 (require 'eieio)
 
-
 (defmacro s/debug (msg &rest args)
   `(with-current-buffer (get-buffer-create "*simplex:debug*")
      (insert (format (format  "%s\n" ,msg) ,@args))
      (goto-char (point-max))))
-
 
 (defclass s/lp () ; No superclasses
   (
@@ -358,43 +356,39 @@
   (equation nil )
   (constant 0))
 
-(defun s/entering-eq-init (A b INDEPENDENT DEPENDENT
+(defun s/make-entering-equation (A b INDEPENDENT DEPENDENT
                              leaving   ;; Index of  leaving equation originally in non-basic set
                              entering) ;; Index of entering equation originally in basic set
   ""
-  (setq pivot (abs  (table/at A leaving entering)))
-  (setq pivot-inverse  (/ 1.0 pivot))
-
-  (setq pivot-pos (positive? (table/at A leaving entering)))
-  (setq sign (if pivot-pos -1 1))
-
-  ;; leaving constant
-  (setq leaving-constant (aref b leaving))
-
+  (let* ((pivot-entry   (table/at A leaving entering))
+         (pivot-value  (abs pivot-entry))
+         (pivot-sign (if (> pivot-entry 0) -1 1))
+         (pivot-inverse  (* pivot-sign (/ 1.0 pivot-value))))
+    
     ;; entering constant will be scaled by pivot inverse
     (setq entering-constant
-          (* leaving-constant pivot-inverse sign))
+          (* (aref b leaving) pivot-inverse ))
 
     ;; entering equation will be scaled
     (setq entering-equation
-          (an/vector:scale
-           (aref A leaving) (* sign pivot-inverse) :in INDEPENDENT :skip entering)) ;; basic variables are what need to be scaled
+           ;; basic variables are what need to be scaled
+          (an/vector:scale (aref A leaving)  pivot-inverse :in INDEPENDENT :skip entering))
 
     ;; set non-basic variables to be nil
-    (loop for non-basic-variable  in DEPENDENT do
-          (aset entering-equation non-basic-variable nil))
+    (an/vector:aset-all entering-equation DEPENDENT nil)
 
     (aset entering-equation entering nil)
-    (aset entering-equation leaving (* -1.0 pivot-inverse sign))
+    
+    (aset entering-equation leaving  (* -1.0 pivot-inverse))
 
     (make-s/equation :equation entering-equation
-                     :constant entering-constant))
+                     :constant entering-constant)))
+
 
 (defun s/substitute-into-equation (equation
                                   substitute-eq
-                                  entering-idx
-                                  ;;leaving-idx
-                                  )  
+                                  entering-idx)
+  
   "Subsititute the substitute equation into "
   (catch 'return  
     (let* ((current-equation (s/equation-equation equation))
@@ -442,13 +436,6 @@
                 (aset return-equation variable (* entering-var-coefficient substitute-coefficient)))
               ))
       
-      ;; When we dont't know this
-      ;; TODO : Why can i comment this code and it makes no difference ???
-      ;; (if leaving-idx
-      ;;     (aset return-equation leaving-idx
-      ;;           (* entering-var-coefficient
-      ;;              (aref entering-eq leaving-idx))))
-
       ;; return the substituted equations
       (make-s/equation :equation return-equation
                        :constant return-constant))))
@@ -459,12 +446,10 @@
          (coefficient (aref objective variable-idx)))
     (and coefficient (> coefficient 0))))
 
-
 (cl-defmethod s/pick-entering-idx ((lp  s/lp))
   "Pick entering index to be one wish the first non-negative value in objective function"
   (an/list:find-first
    (oref lp INDEPENDENT)  (lambda (var-idx) (s/posivitve-objective-coefficent lp var-idx))))
-
 
 (cl-defmethod s/lp-objective-contains-positive-coefficients? ((lp s/lp))
   "Checks that the objecive function has positive coefficeints"
@@ -487,9 +472,7 @@ variables"
          (INDEPENDENT  (oref lp INDEPENDENT))  ;; Members of of the basic set
          (DEPENDENT (oref lp DEPENDENT)) ;; Members of the non-basic set
          (slackness (an/make-vector-shape b nil)))
-
-    ;;(make-s/equation :equation (aref A entering-idx))
-
+    
     ;; After having chosen the entering variable we must pick the
     ;; leaving variable equation to be one with the tightest
     ;; constraints
@@ -536,7 +519,7 @@ variables"
 
     ;; We will be dividing the leaving equation's coefficents
     ;; with the pivot coeffient
-    (setq entering-equation  (s/entering-eq-init A b INDEPENDENT DEPENDENT l e))
+    (setq entering-equation  (s/make-entering-equation A b INDEPENDENT DEPENDENT l e))
 
     ;; construct new entering equation
     (aset ret-b e (s/equation-constant entering-equation))
@@ -550,11 +533,8 @@ variables"
                 (make-s/equation :equation (aref A equation-idx)
                                  :constant (aref b equation-idx)))
           (setq new-equation
-                (s/substitute-into-equation current-equation
-                                            entering-equation
-                                            e
-                                            ;;l
-                                            ))
+                (s/substitute-into-equation current-equation entering-equation e))
+          
           
           (setf (aref ret-A equation-idx ) (s/equation-equation new-equation))
           (setf (aref ret-b equation-idx ) (s/equation-constant new-equation)))
@@ -565,17 +545,11 @@ variables"
 
     ;; Subsitute the entering equation into objective function
     (setq new-objective-equation
-          (s/substitute-into-equation objective-equation entering-equation
-                                      e
-                                      ;;l
-                                      ))
-    ;;
-    (setq ret-c (s/equation-equation new-objective-equation))
-    (setq ret-v (s/equation-constant new-objective-equation))
-    ;;
+          (s/substitute-into-equation objective-equation entering-equation e))
+    
     (an/set-replace! DEPENDENT-set l e)
     (an/set-replace! INDEPENDENT-set  e l)
-    ;;
+    
     (setq DEPENDENT (an/set-list DEPENDENT-set :sort '<))
     (setq INDEPENDENT  (an/set-list INDEPENDENT-set :sort '<))
 
@@ -584,8 +558,9 @@ variables"
           :INDEPENDENT  INDEPENDENT
           :A  ret-A
           :b  ret-b
-          :c  ret-c
-          :v  ret-v)))
+          :c  (s/equation-equation new-objective-equation)
+          :v  (s/equation-constant new-objective-equation))))
+
 
 (defstruct s/simplex-result
   (assignment nil)
@@ -641,7 +616,6 @@ in the linear program."
        :assignment nb-assignment
        :max  sum))))
 
-
 (cl-defmethod s/make-auxiliary-form ((lp s/lp))
   "Creates an auxiliary form."
   (let* ((A (oref lp A))
@@ -693,23 +667,6 @@ in the linear program."
      :DEPENDENT aux-DEPENDENT
      :INDEPENDENT aux-INDEPENDENT)))
 
-
-
-(defun s/aux-test ()
-  (setq test-input
-        (s/lp :c  [3 1 2 0 0 0]
-              :b  [0 0 0 30 24 36]
-              :v 0
-              :DEPENDENT '(0 1 2)
-              :INDEPENDENT  '(3 4 5)
-              :A  (vector
-                   [ nil  nil  nil  nil  nil  nil]
-                   [ nil  nil  nil  nil  nil  nil]
-                   [ nil  nil  nil  nil  nil  nil]
-                   [   -1    -1    -3  nil  nil  nil]
-                   [   -2    -2    -5  nil  nil  nil]
-                   [   -4    -1    -2  nil  nil  nil])))
-  (s/make-auxiliary-form test-input))
 
 (defun s/make-simplex (A b c)
   "Construct the simplex tableau from input constraints."
@@ -822,6 +779,49 @@ in the linear program."
               :c (an/vector:sub-vector  (s/equation-equation  objective) 0 (- total 1))
               :v (s/equation-constant objective))))))
 
+
+
+(defun s/read-input(input-file)
+  "Read in simplex from file."  
+  (with-temp-buffer
+    (insert-file-contents input-file t)
+    (goto-char 0)
+    (let*((sizes (an/buffer:fetch-lines-as-numbers
+                  ;;an/buffer:fetch-line-as-numbers
+                  ))
+          (m (aref sizes 0))
+          (n (aref sizes 1)))
+      (setf s/A (make-vector m nil))
+      (loop for i from 0 below m do
+            (aset s/A i (an/buffer:fetch-lines-as-numbers
+                         ;;an/buffer:fetch-line-as-numbers
+                         )))
+      (setf s/b (an/buffer:fetch-lines-as-numbers
+                 ;;an/buffer:fetch-line-as-numbers
+                 ))
+      (setf s/objective (an/buffer:fetch-lines-as-numbers
+                         ;;an/buffer:fetch-line-as-numbers
+                         )))))
+
+(defvar s/test-dir "/home/aakarsh/src/MOOC/coursera/linear_programming/week-2/diet/")
+
+
+(defun s/aux-test ()
+  (setq test-input
+        (s/lp :c  [3 1 2 0 0 0]
+              :b  [0 0 0 30 24 36]
+              :v 0
+              :DEPENDENT '(0 1 2)
+              :INDEPENDENT  '(3 4 5)
+              :A  (vector
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [ nil  nil  nil  nil  nil  nil]
+                   [   -1    -1    -3  nil  nil  nil]
+                   [   -2    -2    -5  nil  nil  nil]
+                   [   -4    -1    -2  nil  nil  nil])))
+  (s/make-auxiliary-form test-input))
+
 (defun s/entering-eq-test ()
   (setq A
         (vector
@@ -834,7 +834,7 @@ in the linear program."
     (setq b   [nil nil nil 30 24 36])
     (setq DEPENDENT   '(0 1 2))
     (setq INDEPENDENT   '(3 4 5))
-    (s/entering-eq-init A b INDEPENDENT DEPENDENT 5 0))
+    (s/make-entering-equation A b INDEPENDENT DEPENDENT 5 0))
 
 (defun s/substitution-test ()
   (setq main-equation
@@ -855,8 +855,6 @@ in the linear program."
                           :constant 0))
    (s/substitute-into-equation
       objective-equation  sub-equation  (list 0 1 2)  0 5))
-
-
 
 (defun s/test2()
 
@@ -900,30 +898,6 @@ in the linear program."
   (if result
       (s/simplex-result-max result)
     nil))
-
-(defun s/read-input(input-file)
-  "Read in simplex from file."  
-  (with-temp-buffer
-    (insert-file-contents input-file t)
-    (goto-char 0)
-    (let*((sizes (an/buffer:fetch-lines-as-numbers
-                  ;;an/buffer:fetch-line-as-numbers
-                  ))
-          (m (aref sizes 0))
-          (n (aref sizes 1)))
-      (setf s/A (make-vector m nil))
-      (loop for i from 0 below m do
-            (aset s/A i (an/buffer:fetch-lines-as-numbers
-                         ;;an/buffer:fetch-line-as-numbers
-                         )))
-      (setf s/b (an/buffer:fetch-lines-as-numbers
-                 ;;an/buffer:fetch-line-as-numbers
-                 ))
-      (setf s/objective (an/buffer:fetch-lines-as-numbers
-                         ;;an/buffer:fetch-line-as-numbers
-                         )))))
-
-(defvar s/test-dir "/home/aakarsh/src/MOOC/coursera/linear_programming/week-2/diet/")
 
 (ert-deftest s/test-read-01()
   (should (s/read-input (concat s/test-dir "/tests/01"))))
@@ -982,5 +956,8 @@ in the linear program."
             (s/simplex-result-max result))
   (should (equal 2.0 (s/simplex-result-max result))))
 
+(defun s/run-tests ()
+  (interactive)
+  (ert "s/test-" ))
 
-(ert "s/test-" )
+
