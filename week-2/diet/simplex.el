@@ -983,4 +983,4 @@ in the linear program."
   (should (equal 2.0 (s/simplex-result-max result))))
 
 
-(ert "s/test-simplex" )
+(ert "s/test-" )
