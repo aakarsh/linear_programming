@@ -367,8 +367,8 @@
 
   (setq pivot-pos (positive? (table/at A leaving entering)))
   (setq sign (if pivot-pos -1 1))
-    ;; TODO: DOES NOT HANDLE THE SIGN OF CONTANT CORRECTLY.
-    ;; leaving constant
+
+  ;; leaving constant
   (setq leaving-constant (aref b leaving))
 
     ;; entering constant will be scaled by pivot inverse
@@ -787,16 +787,7 @@ in the linear program."
         (message "x_%d not assigned 0" (aref assignment nvars))
         (throw 'done nil))
 
-      ;; TODO: Need to perform substitution here. For each depedendent
-      ;; variable in the original objective function subsititute its
-      ;; equation.
-      ;;
-      ;; TODO:
-      ;; subsitite all dependent equations into objective
-      ;; why does subsititution require knowing leaving idx ?
-      ;;
-      ;; Subsitite all dependent variables into objective function
-      ;;
+      ;; Substititue dependent variables into original objective function
       (let ((objective  (make-s/equation
                                    :equation (oref initial-lp :c)
                                    :constant (oref initial-lp :v)) ))
@@ -805,21 +796,20 @@ in the linear program."
               for current-constant = (aref (oref optimal-aux-form :b) i)
               do            
               (setq objective
-                    (s/substitute-into-equation  objective
-                                                 (make-s/equation :equation current-equation
-                                                                  :constant current-constant)
-                                                 i)))
+                    (s/substitute-into-equation
+                     objective
+                     (make-s/equation :equation current-equation
+                                      :constant current-constant)
+                     i)))
+              
+        ;; x_nvars will be last variable and last column
+        ;; Remove added pseudovariable at x_{n+m}
+        ;; remove it.
         
-      
-      ;; After subsititing remove the x_nvars variable
-      ;; Return new augmented matrix
-      ;; Assuming -x_0 is an INDEPENDENT variable for now.
-      
-      ;; x_nvars will be last variable and last column
-      
         (setq n (length (oref optimal-aux-form :DEPENDENT)))
         (setq m (length (oref optimal-aux-form :INDEPENDENT)))
         (setq total (+ n m))
+        
         (s/lp :A (table/sub-table
                   (oref optimal-aux-form :A)
                   (- total 1)
@@ -829,10 +819,6 @@ in the linear program."
               :b (an/vector:sub-vector  (oref optimal-aux-form :b) 0 (- total 1))
               :c (an/vector:sub-vector  (s/equation-equation  objective) 0 (- total 1))
               :v (s/equation-constant objective))))))
-
-
-
-
 
 (defun s/entering-eq-test ()
   (setq A
@@ -912,29 +898,6 @@ in the linear program."
   (if result
       (s/simplex-result-max result)
     nil))
-
-
-
-
-;; z = 3 x_1 + x_2 + 2*x_3
-;; x_1 = undef ;; dont use these while they are non-basic?
-;; x_2 = undef
-;; x_3 = undef
-;; x_4 = 30 -    x_1  -    x_2 - 3*x_3
-;; x_5 = 24 - 2* x_1  - 2* x_2 - 5*x_3
-;; x_6 = 36 - 4* x_1  -    x_2 - 2*x_3
-;;
-;; A = [[nil , nil, nil],
-;;      [nil , nil, nil],
-;;      [nil , nil, nil],
-;;      [-1  ,  -1,  -3],
-;;      [-2  ,  -2,  -5],
-;;      [-4  ,  -1,  -2]]
-;;
-;; b  = [nil, nil, nil, 30,  24,  36]
-;; c  = [nil,   3,   1,  2, nil, nil, nil]
-;; INDEPENDENT  = {  1,   2,   3}
-;; DEPENDENT = {  4,   5,   6}
 
 (defun s/read-input(input-file)
   "Read in simplex from file."
