@@ -3,18 +3,8 @@ import os
 import sys
 import unittest
 
-debug = True
-
-class UnboundedError(Exception):
-    "Raised when the solution for given equations is unbounded "
-    pass
-
-class InfeasibleError(Exception):
-    "Raised when the solution for given equations is infeasible(has no-solution)."
-    pass
 
 class SlackForm:
-
     "Represents simplex in slack form ..."
 
     class Constraint:
@@ -30,20 +20,23 @@ class SlackForm:
             slackform.A[idx] = self.coefficients
 
         @staticmethod
-        def substitute_objective(simplex,idx,entering_constraint,entering_idx):
-            constraint = Constraint(simplex.c,simplex.v)
-            substitute_constraint(constraint,entering_idx,entering_constraint)
+        def substitute_objective(simplex,entering_constraint,entering_idx):
+            constraint = SlackForm.Constraint(simplex.v,simplex.c)
+            return SlackForm.Constraint.substitute_constraint(constraint,entering_idx,entering_constraint)
 
         @staticmethod
         def substitute_equation(simplex,equation_idx,entering_constraint,entering_idx):
-            constraint =  Constraint(simblex.b[equation_idx],simplex.A[equation_idx])
-            substitute_constraint(constraint,entering_idx,entering_constraint)
+            constraint =  SlackForm.Constraint(simplex.b[equation_idx],simplex.A[equation_idx])
+            return SlackForm.Constraint.substitute_constraint(constraint,entering_idx,entering_constraint)
 
         @staticmethod
         def substitute_constraint(constraint,entering_idx,entering_constraint):
             # new_equation = Constraint.substitute_equation(self,idx,entering_constraint)
+
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
+
+            print("constraint-coefficients: %s, constraint-constraint: %s" %(current_coefficients, current_constant))
 
             return_coefficients = [None] * len(current_coefficients)
             return_constant     =  None
@@ -80,12 +73,21 @@ class SlackForm:
                 else: # no current coefficent use subsitituded value
                     return_coefficients[var_idx] = variable_coefficient * entering_coeff
 
-            return Constraint(return_constant,return_coefficients)
-        @staticmethod
-        def make_entering_constraint(simplex,leaving_idx,entering_idx):
-            A = simplex.A
-            b = simplex.b
+            return SlackForm.Constraint(return_constant,return_coefficients)
 
+
+        @staticmethod
+        def make_entering_constraint(slackform,leaving_idx,entering_idx):
+            if debug:
+                print("make_entering_constraint: leaving_idx: %s entering_idx: %s" % (leaving_idx,entering_idx))
+            A = slackform.A
+            b = slackform.b
+
+            independent = slackform.independent
+            dependent  = slackform.dependent
+
+            nvars = len(independent) + len(dependent)
+            
             pivot_entry = A[leaving_idx][entering_idx]
             pivot_value = abs(pivot_entry)
             pivot_sign = -1 if pivot_entry > 0 else 1
@@ -94,75 +96,98 @@ class SlackForm:
             entering_constant = b[leaving_idx] * pivot_inverse
             leaving_equation = A[leaving_idx]
 
-            entering_equation = \
-            [ pivot_inverse * leaving_equation[idx] if not idx == entering_idx else None
-              for idx in indepedent ]
+            entering_equation = [None] * nvars
+            for idx in independent:
+                if not idx == entering_idx and not leaving_equation[idx] is None:
+                    entering_equation[idx] = pivot_inverse * leaving_equation[idx]
 
+            if debug:
+                print("Entering Equation :%s" % entering_equation)
+                
             entering_equation[entering_idx] = None
             entering_equation[leaving_idx] = -1 * pivot_inverse
 
-            return Constraint(entering_constant,entering_equation)
+            return SlackForm.Constraint(entering_constant,entering_equation)
 
 
-    def __init__(self, simplex):
+    def __init__(self,*args,**kwargs):
         # expand
-        n,m = (simplex.n,simplex.m)
-        A = simplex.A
-        b = simplex.b
-        c = simplex.c
+        if kwargs["simplex"]:
+            simplex = kwargs["simplex"]
+            n,m = (simplex.n,simplex.m)
+            A = simplex.A
+            b = simplex.b
+            c = simplex.c
 
         # A represents the table of size totalxtotal
         # with None possible entreis
         nvars = n+m
-        self.A = [[None] * nvars] * nvars
+        self.A = [ [None for x in range(nvars)] for y in range(nvars)]
 
         # We will use a numbering where
         # dependent variables will be from [x_n to x_nvars)
         # independent variables will be from [x_0 to x_n)
         # x_nvars will be a psuedo variable used in case the initial
         # simplex is not in basic form.
+
         for i in range(0,n):
             for j in range(0,m):
                 self.A[i][j+n] = -A[i][j]
 
-        self.b = [None] * nvars
-        for i in range(0,n):
-            self.b[i] = b[i]
+        if debug:
+            print("\nA:")
+            print(pretty_printers.format_table(self.A))
+            print("Input Equations:")
+            print(pretty_printers.format_table(simplex.A))
 
-        self.c = [None] * nvars
-        for i in range(0,m):
-            self.c[i+n] = c[i]
+        if debug:
+            print("orig-b:%s"% b)
+        self.b = list(map(float,b))
+
+        # Fill rest of it with None
+        self.b.extend([None]*(nvars-len(b)))
+
+        if debug:
+            print("b:%s"% self.b)
+
+        self.c = [None]* n
+        self.c.extend(map(float,c))
+
+        if debug:
+            print("orig-c:%s"% c)
+            print("c:%s"% self.c)
 
         self.v = simplex.v
 
-        self.independent  = set(range(0,n))
-        self.dependent     = set(range(n,nvars))
+        self.independent   = set(range(n,nvars))
+        self.dependent     = set(range(0,n))
 
+        if debug:
+            print("dependent : %s, independent : %s" %
+                  (self.independent,self.dependent))
 
-        leaving_coeff,leaving_idx = SlackForm.__min_idx__(self.b)
+        leaving_coeff,leaving_idx = list_helper.min_index(self.b)
 
-        # already in basic form
-        if leaving_coeff > 0:
-            self.infeasible = False
-            return
+        if debug:
+            print("leaving_coeff:%d leaving_idx: %d"
+                  % (leaving_coeff,leaving_idx))
+
+        # basic solution is feasible :
+        # all constants are positive ?
+
 
         # TODO : Put into feasible form
+        #
         # Not in basic form:
         #   - Either we can put into basic form
         #   - Or the equations are infeasible
+        # TODO : Exither to do the basic form here or try to
+        #        find one that is already in basic form
 
-        self.infeasible = True
-        self.aux_form()
-
-        print("%s",self.A)
-
-    @staticmethod
-    def __min_idx__(l):
-        zl = zip(l,range(0,len(l)))
-        zp = min(zl, key=lambda z: z[0] if z[0] else float('inf'))
-        return zp
 
     def pivot(self,entering_idx,leaving_idx):
+
+        Constraint = SlackForm.Constraint
         entering_constraint = Constraint.make_entering_constraint(self,leaving_idx,entering_idx)
         entering_constraint.store(entering_idx,self)
 
@@ -172,11 +197,20 @@ class SlackForm:
             new_equation = Constraint.substitute_equation(self,idx,entering_constraint,entering_idx)
             new_equation.store(idx,self)
 
-        Constraint.substitute_objective(self,entering_constraint,entering_idx)
-
+        new_objective = Constraint.substitute_objective(self,entering_constraint,entering_idx)
+        print("Constraint: %s " % new_objective)
+        #self.constant = constant
+        #self.coefficients = coefficients
+        self.c = new_objective.coefficients
+        self.v = new_objective.constant
+        print("New objectve %s %s "% (self.c,self.v))
         # move leaving_idx  from dependent   to independent set
         # move entering_idx from independent to dependent set
-        
+
+        if debug:
+            print("dependent: %s leaving %d" %       (self.dependent,leaving_idx))
+            print("independent: %s entering_idx %d" %(self.independent,entering_idx))
+
         self.dependent.remove(leaving_idx)
         self.dependent.add(entering_idx)
 
@@ -186,7 +220,7 @@ class SlackForm:
 
     def objective_has_pos_coeffs(self):
         for value in self.c:
-            if value and v > 0:
+            if value and value > 0:
                 return True
         return False
 
@@ -197,75 +231,152 @@ class SlackForm:
         return None
 
     def pick_leaving_idx(self,entering_idx):
-        slackness = [None] * len(self.b)
+        if debug:
+            print("pick_leaving_idx")
+            print("Entering %d " % entering_idx)
 
+            print("dependent: %s" % self.dependent)
+
+        slackness = [None] * len(self.b)
+        # TODO: Seeing non-None  values in b where it is not a depenedent
+        if debug:
+            print("b: %s"%self.b)
+            print("c: %s"%self.c)
+            print("\nA:\n",pretty_printers.format_table(self.A))
+            
         for idx in self.dependent:
             constant = self.b[idx]
             coeff    = -1 * self.A[idx][entering_idx]
             if coeff > 0:
                 slackness[idx]  = (constant/coeff)
+                
+        if debug:
+            print("slackness computed: %s ",slackness)
 
         # BMK - #1
-        min_slack,slack_idx = SlackForm.__min_idx__(slackness)
+        min_slack,slack_idx = list_helper.min_index(slackness)
         if min_slack:
             return slack_idx
+        # TODO could not pick leaving index
         return None
 
-    def aux_form(self):
-        pass
-        # self.aux_A = [row[:]  for row in self.A]
-        # self.aux_b = self.b[:]
-        # self.aux_dep = set(self.dependent)
-        # self.aux_indep = set(self.independent)
-        # Add x_{nvars} to slack to orignal set of constraints.
-
-
+    def __repr__(self):
+        return "A:%s\nb:%s" %(pretty_printers.format_table(self.A),
+                              self.b)
 
     def solve(self):
-        if self.infeasible:
-            raise InfeasibleError();
+        if debug: print("Enter SlackForm.solve():")
 
         while self.objective_has_pos_coeffs():
+            if debug:
+                print(self)
+
             entering_idx = self.pick_entering_idx()
             leaving_idx  = self.pick_leaving_idx(entering_idx)
-            if not (leaving_idx or entering_idx):  # unbounded
+
+            if not leaving_idx or not entering_idx:  # unbounded                
                 raise UnboundedError()
+            
+            print("Calling pivot Entering: %s Leaving: %s"%(entering_idx,leaving_idx))
             self.pivot(entering_idx , leaving_idx)
-        
+
+        if debug:
+            print("objective after pivots: %s"%self.c)
+        #
         # Variable assignment after pivot stops.
         assignment = [0] * len(self.b)
-
-        # All dependent variables get value of constant 
+        #
+        # All dependent variables get value of constant
         for var_idx in self.dependent:
             assignment[var_idx] = self.b[var_idx]
-
+        #
         opt_value = self.v
         for i in range(0,len(self.c)):
             coefficient = self.c[i]
             value = assignment[i]
-            opt_value += coefficient*value
-        
+            if coefficient and value:
+                opt_value += coefficient * value
+
         return (opt_value, assignment)
 
 
 class Simplex:
 
-    def __init__(self,A,b,c,v,n,m):
+    def __init__(self,A,b,c,n,m):
         self.A = A
         self.b = b
         self.c = c
-        self.v = v
+        # start with (no-constant)
+        # in objective function
+        self.v = 0
         self.n = n
         self.m = m
 
+    def find_basic_feasible(self,min_idx):
+        aux_simplex = self.make_auxiliary_form()
+        aux_sf = SlackForm(simplex=aux_simplex)
+        nvars = self.n + self.m
+        print("Enterting id %d  Leaving id %d"%(nvars,min_idx))
+        aux_sf.pivot(self.n+self.m,min_idx)
+        (opt,ansx) = aux_sf.solve()
+        #(opt,anx) = aux_simplex.solve()
+
     def solve(self):
+        if debug: print("\nSimplex solve");
         try:
-            anst,ansx = SlackForm(self).solve()
-            return (anst,ansx)
+            min_constant, idx = list_helper.min_index(self.b);
+            if debug and min_constant < 0:
+                print(" Currently not in basic form :%d @ index %d "% (min_constant,idx))
+
+                simplex_basic_form = self.find_basic_feasible(idx)
+                return
+            # basic solution is already feasible
+            opt,ansx = None,None
+            if min_constant > 0: # Basic form already in feasible form
+                opt,ansx = SlackForm(simplex=self).solve()
+            if debug:
+                print("Optimimum Value: %f",opt)
+                print("Assignment: %s",ansx)
+            return (opt,ansx)
         except UnboundedError as err:
             return(1,None)
         except InfeasibleError as err:
             return (-1, None)
+
+
+    def make_auxiliary_form(self):
+        "Something "
+        nvars = (self.n + self.m)
+        # new size
+        aux_size = nvars + 1
+        #
+        # create copy of b and extend it for x_{nvars}
+        aux_b = self.b[:]
+        #
+        # set objective function: -x_{nvars}
+        aux_c = ([0] * self.m)
+        aux_c.append(-1)
+        aux_v = 0
+        #
+        aux_dep = set(range(0,self.n))
+        aux_indep = set(range(self.n,nvars))
+        #
+        # simplex will have one extra column and row
+        # to represent x_{nvars}
+        aux_A = [[None for x in range(self.m+1)]
+                       for y in range(self.n)]
+        # copy A
+        for r in range(self.n):
+            for c in range(self.m):
+                aux_A[r][c] = self.A[r][c]
+        #
+        # set nvars column to 1
+        for i in range(self.n):
+            aux_A[i][self.m]= 1
+
+        return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
+
+
 
 
     def __repr__(self):
@@ -273,6 +384,9 @@ class Simplex:
 
     def __str__(self):
         return self.__repr__()
+
+
+
 
     @staticmethod
     def parse_stream(stream):
@@ -282,7 +396,7 @@ class Simplex:
             A += [list(map(int, stream.readline().split()))]
         b = list(map(int, stream.readline().split()))
         c = list(map(int, stream.readline().split()))
-        return Simplex(A,b,c,0,n,m)
+        return Simplex(A,b,c,n,m)
 
     @staticmethod
     def parse_file(fname):
@@ -325,3 +439,47 @@ if __name__ == "__main__":
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
     if anst == 1:
         print("Infinity")
+
+
+
+class UnboundedError(Exception):
+    "Raised when the solution for given equations is unbounded "
+    pass
+
+class InfeasibleError(Exception):
+    "Raised when the solution for given equations is infeasible(has no-solution)."
+    pass
+
+class ListHelper:
+    @staticmethod
+    def min_index(l,max=float('inf')):
+        "Return a pair of (value,index) of elment with minimum index"
+        zl = zip(l,range(0,len(l)))
+        zp = min(zl, key = lambda z: z[0] if z[0] else max)
+        return zp
+
+class PrettyPrinters:
+    @staticmethod
+    def format_table(matrix):
+        "Format matrix as a table"
+        table_str =""
+        for row in matrix:
+            first_col = True
+            for col in row:
+                if first_col:
+                    table_str +="| "
+                    first_col=False
+                if not col is None:
+                    table_str+="%+2.2f"%float(col)
+                else:
+                    table_str+="%5s"%"None"
+                table_str+=" | "
+            table_str+="\n"
+        return table_str
+
+# singleton helpers
+list_helper  =  ListHelper()
+pretty_printers = PrettyPrinters()
+debug = True
+
+#run_tests()
