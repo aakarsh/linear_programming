@@ -36,19 +36,21 @@ class SlackForm:
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
 
-            print("constraint-coefficients: %s, constraint-constraint: %s" %(current_coefficients, current_constant))
+            print("Subsititue Into: constraint-coefficients: %s, constraint-constraint: %s" %(current_coefficients, current_constant))
+            print("Equation : constraint-coefficients: %s, constraint-constraint: %s" %(entering_constraint.coefficients, entering_constraint.constant))
 
             return_coefficients = [None] * len(current_coefficients)
             return_constant     =  None
 
-            variable_coefficient = entering_constraint.coefficients[entering_idx]
+            variable_coefficient = current_coefficients[entering_idx]
 
             # TODO maybe not correct retuern the enteirng constraints
             if not variable_coefficient or variable_coefficient == 0:
+                print("PREMATURE EXIT")
                 return entering_constraint
 
             entering_constant = entering_constraint.constant
-            entering_coeffs   = entering_coeffs.coefficients
+            entering_coeffs   = entering_constraint.coefficients
 
             if not current_constant:
                 current_constant = 0.0
@@ -56,23 +58,20 @@ class SlackForm:
             return_constant = current_constant + (variable_coefficient * entering_constant)
 
             for var_idx in range(0,len(current_coefficients)):
-                current_coefficient = current_coefficients[var_idx]
-                entering_coeff     = entering_coeffs[var_idx]
-                #
                 if var_idx == entering_idx:
                     continue
-                #
-                if (not entering_coeff) or (not current_coefficient):
-                    continue
-                #
-                if not entering_coeff:
-                    entering_coeff = 0
-                #
+                
+                current_coefficient = current_coefficients[var_idx]
+                entering_coeff      =  entering_coeffs[var_idx]  if entering_coeffs[var_idx]  else 0
+
                 if current_coefficient:
                     return_coefficients[var_idx] = current_coefficient + ( variable_coefficient * entering_coeff )
                 else: # no current coefficent use subsitituded value
                     return_coefficients[var_idx] = variable_coefficient * entering_coeff
 
+            if debug:
+                print("Substitute Result : %d [ %s ] "%(return_constant,return_coefficients))
+                
             return SlackForm.Constraint(return_constant,return_coefficients)
 
 
@@ -101,11 +100,13 @@ class SlackForm:
                 if not idx == entering_idx and not leaving_equation[idx] is None:
                     entering_equation[idx] = pivot_inverse * leaving_equation[idx]
 
-            if debug:
-                print("Entering Equation :%s" % entering_equation)
+
                 
             entering_equation[entering_idx] = None
             entering_equation[leaving_idx] = -1 * pivot_inverse
+            
+            if debug:
+                print("Entering Constant: %d Equation :%s" % (entering_constant,entering_equation))
 
             return SlackForm.Constraint(entering_constant,entering_equation)
 
@@ -118,7 +119,13 @@ class SlackForm:
             A = simplex.A
             b = simplex.b
             c = simplex.c
-
+        else:
+            simplex = kwargs["simplex"]
+            n,m = (kwargs["n"],kwargs["m"])
+            A = kwargs["A"]
+            b = kwargs["b"]
+            c = kwargs["c"]
+            
         # A represents the table of size totalxtotal
         # with None possible entreis
         nvars = n+m
@@ -186,11 +193,14 @@ class SlackForm:
 
 
     def pivot(self,entering_idx,leaving_idx):
-
+        #
         Constraint = SlackForm.Constraint
-        entering_constraint = Constraint.make_entering_constraint(self,leaving_idx,entering_idx)
+        entering_constraint = Constraint.make_entering_constraint(self,
+                                                                  leaving_idx,
+                                                                  entering_idx)
         entering_constraint.store(entering_idx,self)
 
+        #
         for idx in self.dependent:
             if idx == leaving_idx:
                 continue
@@ -248,6 +258,7 @@ class SlackForm:
             constant = self.b[idx]
             coeff    = -1 * self.A[idx][entering_idx]
             if coeff > 0:
+                print("%d constant[%f]/coeff[%f] = %f"%(idx,constant,coeff,constant/coeff))
                 slackness[idx]  = (constant/coeff)
                 
         if debug:
@@ -272,12 +283,17 @@ class SlackForm:
                 print(self)
 
             entering_idx = self.pick_entering_idx()
+
             leaving_idx  = self.pick_leaving_idx(entering_idx)
 
             if not leaving_idx or not entering_idx:  # unbounded                
                 raise UnboundedError()
             
-            print("Calling pivot Entering: %s Leaving: %s"%(entering_idx,leaving_idx))
+            if debug:
+                print("Entering Idx : %d Objective Coefficent %d "%( entering_idx,self.c[entering_idx]))
+                print("Leaving  Idx : %d Leaving Equation %s "%( leaving_idx,self.A[leaving_idx]))
+                print("Calling pivot Entering: %s Leaving: %s"%(entering_idx,leaving_idx))
+                
             self.pivot(entering_idx , leaving_idx)
 
         if debug:
@@ -410,18 +426,31 @@ class SimplexTest(unittest.TestCase):
 
     def setUp(self):
         pass
+    
+    def test_feasible_start(self):
+        A=[[1 ,1 ,3 ],
+           [2 ,2 ,5 ],
+           [4 ,1 ,2 ]]
+        b = [30 ,24 ,36]
+        c = [3 ,1 ,2]
+        n = 3
+        m = 3
+        s = Simplex(A,b,c,n,m)
+        opt,ass = s.solve()
+        self.assertEqual(opt,28)
+        
+    # def test_read_01(self):
+    #     simplex = Simplex.parse_file("./tests/01")
+    #     self.assertIsNotNone(simplex)
+    #     self.assertEqual(3,simplex.n)
+    #     self.assertEqual(2,simplex.m)
+    #     self.assertEqual(simplex.n,len(simplex.A))
+    #
+    # def test_solve_01(self):
+    #     simplex = Simplex.parse_file("./tests/01")
+    #     anst,ansx = simplex.solve()
+    #     self.assertIsNotNone(ansx)
 
-    def test_read_01(self):
-        simplex = Simplex.parse_file("./tests/01")
-        self.assertIsNotNone(simplex)
-        self.assertEqual(3,simplex.n)
-        self.assertEqual(2,simplex.m)
-        self.assertEqual(simplex.n,len(simplex.A))
-
-    def test_solve_01(self):
-        simplex = Simplex.parse_file("./tests/01")
-        anst,ansx = simplex.solve()
-        self.assertIsNotNone(ansx)
 
 
 def run_tests():
