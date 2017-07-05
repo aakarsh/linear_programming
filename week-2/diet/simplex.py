@@ -15,6 +15,27 @@ class InfeasibleError(Exception):
     pass
 
 class ListHelper:
+
+    @staticmethod
+    def zip_set(l,member_set,by = lambda x: True):
+        return [(i,l[i]) for i in member_set if by(l[i])]
+
+    @staticmethod
+    def find_first_idx(l, in_set = None, by = lambda x: True):
+        "Find first element of list set in by predicate "
+        if not in_set:
+            in_set = set(range(len(l)))
+        for (idx, value) in ListHelper.zip_set(l,in_set,by):
+            return idx
+        return None
+
+    @staticmethod
+    def find_first(l, in_set = None, by = lambda x: True):
+        "Find first element of list set in by predicate "
+        for (idx, value) in ListHelper.zip_set(l,in_set,by):
+            return value
+        return None
+
     @staticmethod
     def min_index(l,max=float('inf')):
         "Return a pair of (value,index) of elment with minimum index"
@@ -83,7 +104,7 @@ class SlackForm:
 
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
-            
+
             if debug:
                 print("Subsititue Into: constraint-coefficients: %s, constraint-constraint: %s"
                       % (current_coefficients, current_constant))
@@ -303,10 +324,12 @@ class SlackForm:
         return False
 
     def pick_entering_idx(self):
-        for idx in self.independent:
-            if self.c[idx] > 0:
-                return idx
-        return None
+        positive_p =  lambda x : x and (x > 0)
+        find_first_idx  = list_helper.find_first_idx
+        return find_first_idx(self.c,in_set = self.independent,
+                                     by     = positive_p)
+
+
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
@@ -316,11 +339,13 @@ class SlackForm:
             print("dependent: %s" % self.dependent)
 
         slackness = [None] * len(self.b)
+
         # TODO: Seeing non-None  values in b where it is not a depenedent
+
         if debug:
             print("b: %s"%self.b)
             print("c: %s"%self.c)
-            print("\nA:\n",pretty_printers.format_table(self.A))
+            print("\nA: %s\n" % pretty_printers.format_table(self.A))
 
         for idx in self.dependent:
             constant = self.b[idx]
@@ -329,11 +354,9 @@ class SlackForm:
                 if debug:
                     print("%d constant[%f]/coeff[%f] = %f"%(idx,constant,coeff,constant/coeff))
                 slackness[idx]  = (constant/coeff)
-
         if debug:
             print("slackness computed: %s ",slackness)
 
-        # BMK - #1
         min_slack,slack_idx = list_helper.min_index(slackness)
         if min_slack:
             return slack_idx
@@ -368,6 +391,7 @@ class SlackForm:
             print("\nA:\n%s\n" % pretty_printers.format_table(self.A))
             print("\nb:%s\n" % self.b)
             print("objective after pivots: %s"%self.c)
+
         #
         # Variable assignment after pivot stops.
         assignment = [0] * len(self.b)
@@ -376,13 +400,14 @@ class SlackForm:
         for var_idx in self.dependent:
             assignment[var_idx] = self.b[var_idx]
         #
+        #
         opt_value = self.v
         for i in range(0,len(self.c)):
             coefficient = self.c[i]
             value = assignment[i]
             if coefficient and value:
                 opt_value += coefficient * value
-                
+
         if debug:
             print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
         # does that mean all assigned variables were explicity assigned.
@@ -411,12 +436,12 @@ class Simplex:
         if debug:
             print("Enterting id %d  Leaving id %d" % (nvars,min_idx))
         aux_sf.pivot(self.n+self.m,min_idx)
-        
+
         (opt,ansx) = aux_sf.solve()
-        
+
         if opt != 0.0:
             raise InfeasibleError()
-        
+
         new_objective = SlackForm.Constraint(slackform.v,slackform.c)
         if debug:
             print("dependent : %s",aux_sf.dependent)
@@ -442,10 +467,9 @@ class Simplex:
         for row in range(len(aux_sf.A)):
             for col in aux_sf.dependent: # no dependent column should have a value
                 aux_sf.A[row][col] = None
-
+        #
         # using new objective and return new slack form need to remove
         # x_nvars
-
         if debug:
             print("Objective: %s" % new_objective)
             print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
@@ -627,10 +651,9 @@ def run_tests():
     unittest.main(module='simplex',exit=False)
 
 if __name__ == "__main__":
-    
+
     if len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "--debug") :
         debug = True
-        
     simplex = Simplex.parse_stream(sys.stdin)
     anst, ansx = simplex.solve()
     if anst == -1:
