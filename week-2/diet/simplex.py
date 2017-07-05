@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+import itertools
 
 debug = False
 
@@ -13,6 +14,36 @@ class UnboundedError(Exception):
 class InfeasibleError(Exception):
     "Raised when the solution for given equations is infeasible(has no-solution)."
     pass
+
+class MatrixHelper:
+
+    @staticmethod
+    def set_value_all_rows(matrix,row_idxs, value):
+        for row in row_idxs:
+            matrix[row] = [value] * len(matrix[row])
+
+    @staticmethod
+    def set_column_value(matrix,col_idx,value):
+        for row in range(len(matrix)):
+            matrix[row][col]= value
+            for col in aux_sf.dependent: # no dependent column should have a value
+                aux_sf.A[row][col] = None
+    @staticmethod
+    def set_value_all_columns(matrix,col_idxs, value):
+        for row in range(len(matrix)):
+            for col in col_idxs:
+                matrix[row][col]=value
+
+    @staticmethod
+    def set_value_all_rows_columns(matrix,value,**kwargs):
+        if "columns" in kwargs:
+            MatrixHelper.set_value_all_columns(matrix,kwargs["columns"],value)
+        if "rows" in kwargs:
+            MatrixHelper.set_value_all_rows(matrix,kwargs["rows"],value)
+
+    @staticmethod
+    def pop_column(matrix):
+        for row in matrix: row.pop()
 
 class ListHelper:
 
@@ -35,6 +66,11 @@ class ListHelper:
         for (idx, value) in ListHelper.zip_set(l,in_set,by):
             return value
         return None
+
+    @staticmethod
+    def set_values(l, value,idxs ):
+        for idx in idxs:
+            l[idx] = value
 
     @staticmethod
     def min_index(l,max=float('inf')):
@@ -147,14 +183,17 @@ class SlackForm:
 
 
         @staticmethod
-        def make_entering_constraint(slackform,leaving_idx,entering_idx):
+        def make_entering_constraint(slackform, leaving_idx, entering_idx):
+
             if debug:
-                print("make_entering_constraint: leaving_idx: %s entering_idx: %s" % (leaving_idx,entering_idx))
+                print("make_entering_constraint: leaving_idx: %s entering_idx: %s"
+                      % (leaving_idx,entering_idx))
+
             A = slackform.A
             b = slackform.b
 
             independent = slackform.independent
-            dependent  = slackform.dependent
+            dependent   = slackform.dependent
 
             nvars = len(independent) + len(dependent)
 
@@ -164,7 +203,7 @@ class SlackForm:
             pivot_inverse = pivot_sign * (1.0/pivot_value)
 
             entering_constant = b[leaving_idx] * pivot_inverse
-            leaving_equation = A[leaving_idx]
+            leaving_equation  = A[leaving_idx]
 
             entering_equation = [None] * nvars
             for idx in independent:
@@ -172,10 +211,11 @@ class SlackForm:
                     entering_equation[idx] = pivot_inverse * leaving_equation[idx]
 
             entering_equation[entering_idx] = None
-            entering_equation[leaving_idx] = -1 * pivot_inverse
+            entering_equation[leaving_idx]  = -1 * pivot_inverse
 
             if debug:
-                print("Entering Constant: %d Equation :%s" % (entering_constant,entering_equation))
+                print("Entering Constant: %d Equation :%s" %
+                      (entering_constant,entering_equation))
 
             return SlackForm.Constraint(entering_constant,entering_equation)
 
@@ -278,7 +318,6 @@ class SlackForm:
         # TODO : Exither to do the basic form here or try to
         #        find one that is already in basic form
 
-
     def pivot(self,entering_idx,leaving_idx):
         #
         Constraint = SlackForm.Constraint
@@ -286,7 +325,6 @@ class SlackForm:
                                                                   leaving_idx,
                                                                   entering_idx)
         entering_constraint.store(entering_idx,self)
-
         #
         for idx in self.dependent:
             if idx == leaving_idx:
@@ -352,7 +390,8 @@ class SlackForm:
             coeff    = -1 * self.A[idx][entering_idx]
             if coeff > 0:
                 if debug:
-                    print("%d constant[%f]/coeff[%f] = %f"%(idx,constant,coeff,constant/coeff))
+                    print("%d constant[%f]/coeff[%f] = %f" % (idx,constant,coeff,constant/coeff))
+
                 slackness[idx]  = (constant/coeff)
         if debug:
             print("slackness computed: %s ",slackness)
@@ -433,8 +472,11 @@ class Simplex:
         aux_simplex = self.make_auxiliary_form()
         aux_sf = SlackForm(simplex=aux_simplex)
         nvars = self.n + self.m
+
         if debug:
-            print("Enterting id %d  Leaving id %d" % (nvars,min_idx))
+            print("Enterting id %d  Leaving id %d" %
+                  (nvars,min_idx))
+
         aux_sf.pivot(self.n+self.m,min_idx)
 
         (opt,ansx) = aux_sf.solve()
@@ -443,6 +485,7 @@ class Simplex:
             raise InfeasibleError()
 
         new_objective = SlackForm.Constraint(slackform.v,slackform.c)
+
         if debug:
             print("dependent : %s",aux_sf.dependent)
 
@@ -456,18 +499,15 @@ class Simplex:
         if debug:
             print("Substituted Objective: %s" % new_objective)
 
-        for idx in aux_sf.dependent: # should have no dependent's in new objctive
-            new_objective.coefficients[idx]= None
+        ListHelper.set_values(new_objective.coefficients, None, aux_sf.dependent)
+        ListHelper.set_values(aux_sf.b, None, aux_sf.independent )
 
-        for row in aux_sf.independent: # There should be now independent equations set
-            aux_sf.b[row]= None
-            for col in range(len(aux_sf.A[row])):
-                aux_sf.A[row][col] = None
+        # set all unused rows  and columns to None
+        MatrixHelper.set_value_all_rows_columns(aux_sf.A, None,
+                                                rows= aux_sf.independent,
+                                                columns= aux_sf.dependent)
 
-        for row in range(len(aux_sf.A)):
-            for col in aux_sf.dependent: # no dependent column should have a value
-                aux_sf.A[row][col] = None
-        #
+
         # using new objective and return new slack form need to remove
         # x_nvars
         if debug:
@@ -478,24 +518,29 @@ class Simplex:
             print("indepenedents: \n%s"  % aux_sf.independent)
 
         # remove last entry from rows
-        for row  in range(len(aux_sf.A)):
-            aux_sf.A[row].pop()
+        MatrixHelper.pop_column(aux_sf.A)
+
         # remove last entry from constant
         aux_sf.b.pop()
+
         # remove last entry from objective
         new_objective.coefficients.pop()
+
         # replace the new objective
-        aux_sf.replace(c = new_objective.coefficients, v = new_objective.constant)
+        aux_sf.replace(c = new_objective.coefficients,
+                       v = new_objective.constant)
+
         # remove one independent variable
         aux_sf.independent.remove(nvars)
         aux_sf.replace(m=len(aux_sf.independent)-1)
 
         if debug:
-            print("Objective: %s"% new_objective)
-            print("A: \n%s"% pretty_printers.format_table(aux_sf.A))
-            print("b: \n%s"% aux_sf.b)
+            print("objective: %s " % new_objective)
+            print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
+            print("b: \n%s" % aux_sf.b)
             print("depenedents:   \n%s"  % aux_sf.dependent)
-            print("indepenedents: \n%s"% aux_sf.independent)
+            print("indepenedents: \n%s"  % aux_sf.independent)
+
         return aux_sf
 
     def solve(self):
@@ -603,9 +648,9 @@ class SimplexTest(unittest.TestCase):
         pass
 
     def test_feasible_start(self):
-        A=[[1 ,1 ,3 ],
-           [2 ,2 ,5 ],
-           [4 ,1 ,2 ]]
+        A = [[1 ,1 ,3 ],
+             [2 ,2 ,5 ],
+             [4 ,1 ,2 ]]
         b = [30 ,24 ,36]
         c = [3 ,1 ,2]
         n = 3
