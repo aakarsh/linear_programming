@@ -3,6 +3,48 @@ import os
 import sys
 import unittest
 
+debug = False
+
+
+class UnboundedError(Exception):
+    "Raised when the solution for given equations is unbounded "
+    pass
+
+class InfeasibleError(Exception):
+    "Raised when the solution for given equations is infeasible(has no-solution)."
+    pass
+
+class ListHelper:
+    @staticmethod
+    def min_index(l,max=float('inf')):
+        "Return a pair of (value,index) of elment with minimum index"
+        zl = zip(l,range(0,len(l)))
+        zp = min(zl, key = lambda z: z[0] if z[0] else max)
+        return zp
+
+class PrettyPrinters:
+    @staticmethod
+    def format_table(matrix):
+        "Format matrix as a table"
+        table_str =""
+        for row in matrix:
+            first_col = True
+            for col in row:
+                if first_col:
+                    table_str +="| "
+                    first_col=False
+                if not col is None:
+                    table_str+="%+2.2f"%float(col)
+                else:
+                    table_str+="%5s"%"None"
+                table_str+=" | "
+            table_str+="\n"
+        return table_str
+
+# singleton helpers
+list_helper  =  ListHelper()
+pretty_printers = PrettyPrinters()
+debug = True
 
 class SlackForm:
     "Represents simplex in slack form ..."
@@ -34,18 +76,19 @@ class SlackForm:
 
         @staticmethod
         def substitute_constraint(constraint,entering_idx,entering_constraint):
-            # new_equation = Constraint.substitute_equation(self,idx,entering_constraint)
-            print("substitute_constraint: ")
-            print("Constraint  : %s" % entering_constraint)
-            print("Entering Idx : %s" % entering_idx)
-            print("Entering  : %s" % entering_constraint)
+
+            if debug:
+                print("Substitute_Constraint: ")
+                print("Substitute Into  : %s" % constraint)
+                print("Entering Idx : %s"     % entering_idx)
+                print("Entering  : %s"        % entering_constraint)
 
             
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
-
-            print("Subsititue Into: constraint-coefficients: %s, constraint-constraint: %s" % (current_coefficients, current_constant))
-            print("Equation : constraint-coefficients: %s, constraint-constraint: %s" % (entering_constraint.coefficients, entering_constraint.constant))
+            if debug:
+                print("Subsititue Into: constraint-coefficients: %s, constraint-constraint: %s" % (current_coefficients, current_constant))
+                print("Equation : constraint-coefficients: %s, constraint-constraint: %s" % (entering_constraint.coefficients, entering_constraint.constant))
 
             return_coefficients = [None] * len(current_coefficients)
             return_constant     =  None
@@ -54,8 +97,7 @@ class SlackForm:
 
             # TODO maybe not correct retuern the enteirng constraints
             if not variable_coefficient or variable_coefficient == 0:
-                print("PREMATURE EXIT")
-                return entering_constraint
+                return constraint
 
             entering_constant = entering_constraint.constant
             entering_coeffs   = entering_constraint.coefficients
@@ -117,20 +159,36 @@ class SlackForm:
             return SlackForm.Constraint(entering_constant,entering_equation)
 
 
-    def __init__(self,*args,**kwargs):
+    def replace(self,**kwargs):
+        if "A" in kwargs:
+            self.A = kwargs["A"]
+        if "b" in kwargs:
+            self.b = kwargs["b"]
+        if "c" in kwargs:
+            self.c = kwargs["c"]
+        if "v" in kwargs:
+            self.v = kwargs["v"]
+        if "n" in kwargs:
+            self.n = kwargs["n"]
+        if "m" in kwargs:
+             self.m = kwargs["m"]
+
+            
+    def __init__(self,**kwargs):
         # expand
-        if kwargs["simplex"]:
+        if ("simplex" in kwargs) and kwargs["simplex"]:
             simplex = kwargs["simplex"]
             n,m = (simplex.n,simplex.m)
             A = simplex.A
             b = simplex.b
             c = simplex.c
+            v = simplex.v
         else:
-            simplex = kwargs["simplex"]
             n,m = (kwargs["n"],kwargs["m"])
             A = kwargs["A"]
             b = kwargs["b"]
             c = kwargs["c"]
+            v = kwargs["v"]
 
         # A represents the table of size totalxtotal
         # with None possible entreis
@@ -151,7 +209,7 @@ class SlackForm:
             print("\nA:")
             print(pretty_printers.format_table(self.A))
             print("Input Equations:")
-            print(pretty_printers.format_table(simplex.A))
+            print(pretty_printers.format_table(A))
 
         if debug:
             print("orig-b:%s"% b)
@@ -163,14 +221,14 @@ class SlackForm:
         if debug:
             print("b:%s"% self.b)
 
-        self.c = [None]* n
+        self.c = [None] * n
         self.c.extend(map(float,c))
 
         if debug:
             print("orig-c:%s"% c)
             print("c:%s"% self.c)
 
-        self.v = simplex.v
+        self.v = v
         # Original variables
         self.independent   = set(range(n,nvars))
 
@@ -216,12 +274,14 @@ class SlackForm:
             new_equation.store(idx,self)
 
         new_objective = Constraint.substitute_objective(self,entering_constraint,entering_idx)
-        print("Constraint: %s " % new_objective)
+        if debug:
+            print("Constraint: %s " % new_objective)
         #self.constant = constant
         #self.coefficients = coefficients
         self.c = new_objective.coefficients
         self.v = new_objective.constant
-        print("New objectve %s %s "% (self.c,self.v))
+        if debug:
+            print("New objectve %s %s "% (self.c,self.v))
         # move leaving_idx  from dependent   to independent set
         # move entering_idx from independent to dependent set
 
@@ -291,10 +351,10 @@ class SlackForm:
                 print(self)
 
             entering_idx = self.pick_entering_idx()
-
             leaving_idx  = self.pick_leaving_idx(entering_idx)
 
-            if not leaving_idx or not entering_idx:  # unbounded
+
+            if  (leaving_idx is None)  or  (entering_idx is None):  # unbounded
                 raise UnboundedError()
 
             if debug:
@@ -322,8 +382,8 @@ class SlackForm:
             value = assignment[i]
             if coefficient and value:
                 opt_value += coefficient * value
-
-        print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
+        if debug:
+            print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
         return (opt_value, assignment)
 
 
@@ -341,43 +401,96 @@ class Simplex:
 
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
+        slackform = SlackForm(A=self.A,b=self.b,c=self.c,v=0,n=self.n,m=self.m)
         aux_simplex = self.make_auxiliary_form()
         aux_sf = SlackForm(simplex=aux_simplex)
         nvars = self.n + self.m
-        print("Enterting id %d  Leaving id %d" % (nvars,min_idx))
+        if debug:
+            print("Enterting id %d  Leaving id %d" % (nvars,min_idx))
         aux_sf.pivot(self.n+self.m,min_idx)
         (opt,ansx) = aux_sf.solve()
-        #
-        #  get x_0 and substitute it into objective function return
-        #  new basic feasible solution.
-        #
-        # HERE
-        new_objective = SlackForm.Constraint(aux_sf.v,aux_sf.c)
+
+        new_objective = SlackForm.Constraint(slackform.v,slackform.c)
+        if debug:
+            print("dependent : %s",aux_sf.dependent)
+        
         for idx in aux_sf.dependent:
             equation = aux_sf.A[idx]
-            constant = aux_sf.b[idx]
-            
-            entering_constraint = SlackForm.Constraint(constant,equation)
-
-            # depressed because subsittution code may not be 
-            # def substitute_constraint(constraint,entering_idx,entering_constraint):
-            
-            new_objective = SlackForm.Constraint.substitute_constraint(new_objective,idx,entering_constraint)
-
+            constant = aux_sf.b[idx]            
+            entering_constraint = SlackForm.Constraint(constant,equation)            
+            new_objective = SlackForm.Constraint.substitute_constraint(new_objective,
+                                                                       idx,
+                                                                       entering_constraint)
         if debug:
             print("Substituted Objective: %s" % new_objective)
-        
-        
+
+
+        for idx in aux_sf.dependent: # should have no dependent's in new objctive
+            new_objective.coefficients[idx]= None
+
+        for row in aux_sf.independent: # There should be now independent equations set
+            aux_sf.b[row]= None
+            for col in range(len(aux_sf.A[row])):
+                aux_sf.A[row][col] = None
+
+        for row in range(len(aux_sf.A)):
+            for col in aux_sf.dependent: # no dependent column should have a value
+                aux_sf.A[row][col] = None
+
+        # using new objective and return new slack form need to remove
+        # x_nvars
+
+        if debug:
+            print("Objective: %s" % new_objective)
+            print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
+            print("b: \n%s" % aux_sf.b)
+            print("depenedents:   \n%s"  % aux_sf.dependent)
+            print("indepenedents: \n%s"  % aux_sf.independent)
+
+        # remove last entry from rows
+        for row  in range(len(aux_sf.A)):            
+            aux_sf.A[row].pop()
+        # remove last entry from constant
+        aux_sf.b.pop()
+        # remove last entry from objective
+        new_objective.coefficients.pop()
+        # replace the new objective
+        aux_sf.replace(c = new_objective.coefficients, v = new_objective.constant)
+        # remove one independent variable
+        aux_sf.independent.remove(nvars)
+        aux_sf.replace(m=len(aux_sf.independent)-1)
+
+
+
+        if debug:
+            print("Objective: %s"% new_objective)
+            print("A: \n%s"% pretty_printers.format_table(aux_sf.A))
+            print("b: \n%s"% aux_sf.b)
+            print("depenedents:   \n%s"  % aux_sf.dependent)
+            print("indepenedents: \n%s"% aux_sf.independent)        
+        return aux_sf
+
     def solve(self):
         if debug: print("\nSimplex solve");
         try:
-            print("Simplex:b %s"%self.b)
+            if debug:
+                print("Simplex:b %s"%self.b)
             min_constant, idx = list_helper.min_index(self.b);
             if debug and min_constant < 0:
                 print(" Currently not in basic form :%d - index %d " %
                       (min_constant,idx))
                 simplex_basic_form = self.find_basic_feasible(idx)
-                return
+                try:
+                    opt,ansx = simplex_basic_form.solve()
+                    if debug:
+                        print("OPTIMIMUM VALUE: %f" %opt)
+                        print("ASSIGNMENT: %s " % ansx[self.n:self.n+self.m])
+                    return (opt,ansx)
+                except UnboundedError as err:
+                    return(1,None)
+                except InfeasibleError as err:
+                    return (-1, None)
+
             # basic solution is already feasible
             opt,ansx = None,None
             if min_constant > 0: # Basic form already in feasible form
@@ -453,17 +566,17 @@ class SimplexTest(unittest.TestCase):
     def setUp(self):
         pass
 
-    # def test_feasible_start(self):
-    #     A=[[1 ,1 ,3 ],
-    #        [2 ,2 ,5 ],
-    #        [4 ,1 ,2 ]]
-    #     b = [30 ,24 ,36]
-    #     c = [3 ,1 ,2]
-    #     n = 3
-    #     m = 3
-    #     s = Simplex(A,b,c,n,m)
-    #     opt,ass = s.solve()
-    #     self.assertEqual(opt,28)
+    def test_feasible_start(self):
+        A=[[1 ,1 ,3 ],
+           [2 ,2 ,5 ],
+           [4 ,1 ,2 ]]
+        b = [30 ,24 ,36]
+        c = [3 ,1 ,2]
+        n = 3
+        m = 3
+        s = Simplex(A,b,c,n,m)
+        opt,ass = s.solve()
+        self.assertEqual(opt,28)
 
     def test_infeasible_start(self):
         A = [[ 2 ,-1],
@@ -476,19 +589,19 @@ class SimplexTest(unittest.TestCase):
         opt,ass = s.solve()
         self.assertEqual(opt,2.0)
 
-    # def test_read_01(self):
-    #     simplex = Simplex.parse_file("./tests/01")
-    #     self.assertIsNotNone(simplex)
-    #     self.assertEqual(3,simplex.n)
-    #     self.assertEqual(2,simplex.m)
-    #     self.assertEqual(simplex.n,len(simplex.A))
-    #
-    # def test_solve_01(self):
-    #     simplex = Simplex.parse_file("./tests/01")
-    #     anst,ansx = simplex.solve()
-    #     self.assertIsNotNone(anst)
-    #     self.assertIsNotNone(ansx)
-
+    def test_read_01(self):
+        simplex = Simplex.parse_file("./tests/01")
+        self.assertIsNotNone(simplex)
+        self.assertEqual(3,simplex.n)
+        self.assertEqual(2,simplex.m)
+        self.assertEqual(simplex.n,len(simplex.A))
+    
+    def test_solve_01(self):
+        simplex = Simplex.parse_file("./tests/01")
+        anst,ansx = simplex.solve()
+        print("anst:%s ansx:%s"%(anst,ansx))
+        self.assertIsNotNone(anst)
+        self.assertIsNotNone(ansx)
 
 
 def run_tests():
@@ -505,45 +618,5 @@ if __name__ == "__main__":
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
     if anst == 1:
         print("Infinity")
-
-class UnboundedError(Exception):
-    "Raised when the solution for given equations is unbounded "
-    pass
-
-class InfeasibleError(Exception):
-    "Raised when the solution for given equations is infeasible(has no-solution)."
-    pass
-
-class ListHelper:
-    @staticmethod
-    def min_index(l,max=float('inf')):
-        "Return a pair of (value,index) of elment with minimum index"
-        zl = zip(l,range(0,len(l)))
-        zp = min(zl, key = lambda z: z[0] if z[0] else max)
-        return zp
-
-class PrettyPrinters:
-    @staticmethod
-    def format_table(matrix):
-        "Format matrix as a table"
-        table_str =""
-        for row in matrix:
-            first_col = True
-            for col in row:
-                if first_col:
-                    table_str +="| "
-                    first_col=False
-                if not col is None:
-                    table_str+="%+2.2f"%float(col)
-                else:
-                    table_str+="%5s"%"None"
-                table_str+=" | "
-            table_str+="\n"
-        return table_str
-
-# singleton helpers
-list_helper  =  ListHelper()
-pretty_printers = PrettyPrinters()
-debug = True
 
 #run_tests()

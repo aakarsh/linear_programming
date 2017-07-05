@@ -783,11 +783,8 @@ in the linear program."
                      (make-s/equation :equation current-equation
                                       :constant current-constant)
                      i)))
-
         ;; x_nvars will be last variable and last column
-        ;; Remove added pseudovariable at x_{n+m}
-        ;; remove it.
-
+        ;; Remove added pseudovariable at x_{n+m} remove it.
         (setq n (length (oref optimal-aux-form :DEPENDENT)))
         (setq m (length (oref optimal-aux-form :INDEPENDENT)))
         (setq total (+ n m))
