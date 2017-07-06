@@ -7,10 +7,10 @@ import itertools
 
 debug = False
 
-def isclose(a, b, rel_tol=1e-09, abs_tol=1e-09):
+def isclose(a, b, rel_tol=1e-06, abs_tol=1e-06):
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
-def iszero(a,rel_tol=1e-09, abs_tol=1e-09):
+def iszero(a,rel_tol=1e-06, abs_tol=1e-06):
     return isclose(a,0.0,rel_tol,abs_tol)
 
 
@@ -502,7 +502,7 @@ class Simplex:
 
         (opt,ansx) = aux_sf.solve()
 
-        if not iszero(opt):
+        if not iszero(opt,rel_tol=1e-06,abs_tol=1e-06):
             if debug: print("raising infeasible %f %s"%(opt,iszero(opt,rel_tol=1e-09,abs_tol=1e-09)))
             raise InfeasibleError()
 
