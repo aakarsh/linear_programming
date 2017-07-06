@@ -9,7 +9,11 @@ debug = False
 
 def isclose(a, b, rel_tol=1e-09, abs_tol=1e-09):
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
-    
+
+def iszero(a,rel_tol=1e-09, abs_tol=1e-09):
+    return isclose(a,0.0,rel_tol,abs_tol)
+
+
 class UnboundedError(Exception):
     "Raised when the solution for given equations is unbounded "
     pass
@@ -83,7 +87,7 @@ class ListHelper:
     @staticmethod
     def min_index(l,max=float('inf')):
         "Return a pair of (value,index) of elment with minimum index"
-        zl = zip(l,range(0,len(l)))
+        zl = zip(l,range(len(l)))
         zp = min(zl, key = lambda z: z[0] if z[0] else max)
         return zp
 
@@ -100,7 +104,7 @@ class PrettyPrinters:
                     output += "| "
                     first_col=False
                 if not col is None:
-                    output += "%+2.2f"% float(col)
+                    output += "%f"% float(col)
                 else:
                     output +="%5s"%"None"
                 output +=" | "
@@ -148,7 +152,7 @@ class SlackForm:
             variable_coefficient = current_coefficients[entering_idx]
 
             # TODO maybe not correct return the entering constraints
-            if not variable_coefficient or variable_coefficient == 0:
+            if not variable_coefficient or iszero(variable_coefficient):
                 retval = constraint 
                 if debug: print("subs => : %s " % (retval))
                 return retval
@@ -366,7 +370,7 @@ class SlackForm:
                   
     def objective_has_positive_coefficients(self):
         for value in self.c:
-            if value and not isclose(value,0.0,rel_tol=1e-6) and value > 0:
+            if value and not iszero(value,rel_tol=1e-6) and value > 0:
                 return True
         return False
 
@@ -396,7 +400,7 @@ class SlackForm:
 
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
                 
-            if (not isclose(coeff,0.0,abs_tol=0.0,rel_tol=1e-20)) and coeff > 0.0:
+            if (not iszero(coeff,abs_tol=0.0,rel_tol=1e-20)) and coeff > 0.0:
                 slack[idx]  = (constant/coeff)
                 if debug:
                     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
@@ -498,8 +502,8 @@ class Simplex:
 
         (opt,ansx) = aux_sf.solve()
 
-        if not isclose(opt,0.0):
-            if debug: print("raising infeasible %f %s"%(opt,isclose(opt,0,rel_tol=1e-09,abs_tol=1e-09)))
+        if not iszero(opt):
+            if debug: print("raising infeasible %f %s"%(opt,iszero(opt,rel_tol=1e-09,abs_tol=1e-09)))
             raise InfeasibleError()
 
         if debug:
@@ -566,7 +570,8 @@ class Simplex:
             if debug:
                 print("Simplex:b %s"%self.b)
             min_constant, idx = list_helper.min_index(self.b);
-            if  min_constant < 0:
+            
+            if  min_constant < 0: # 0-comparison
                 if debug:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
                 simplex_basic_form = self.find_basic_feasible(idx)
@@ -618,7 +623,7 @@ class Simplex:
         aux_c.append(-1)
         aux_v = 0
         #
-        aux_dep = set(range(0,self.n))
+        aux_dep = set(range(self.n))
         aux_indep = set(range(self.n,nvars))
         #
         # simplex will have one extra column and row
