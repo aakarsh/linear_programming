@@ -1,18 +1,27 @@
 #!/usr/bin/env python
 
+import glob
 import os
 import sys
 import unittest
 import itertools
 
 debug = False
+global_tolerance = 1e-09
 
-def isclose(a, b, rel_tol=1e-06, abs_tol=1e-06):
+class FPHelper:
+
+    @staticmethod
+    def ispositive(x):
+        return x and (not FPHelper.iszero(x)) and (x > 0.0)
+    
+    @staticmethod
+    def isclose(a, b, rel_tol=global_tolerance, abs_tol=global_tolerance):
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
-
-def iszero(a,rel_tol=1e-06, abs_tol=1e-06):
-    return isclose(a,0.0,rel_tol,abs_tol)
-
+    
+    @staticmethod
+    def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
+        return FPHelper.isclose(a,0.0,rel_tol,abs_tol)
 
 class UnboundedError(Exception):
     "Raised when the solution for given equations is unbounded "
@@ -30,11 +39,9 @@ class MatrixHelper:
             matrix[row] = [value] * len(matrix[row])
 
     @staticmethod
-    def set_column_value(matrix,col_idx,value):
+    def set_column_value(matrix,col,value):
         for row in range(len(matrix)):
             matrix[row][col]= value
-            for col in aux_sf.dependent: # no dependent column should have a value
-                aux_sf.A[row][col] = None
 
     @staticmethod
     def set_value_all_columns(matrix,col_idxs, value):
@@ -50,13 +57,18 @@ class MatrixHelper:
             MatrixHelper.set_value_all_rows(matrix,kwargs["rows"],value)
 
     @staticmethod
+    def copy_matrix(m1,m2):
+        for r in range(len(m2)):
+            for c in range(len(m2[r])):
+                m1[r][c] = m2[r][c]
+
+    @staticmethod
     def pop_column(matrix):
         for row in matrix: row.pop()
 
     @staticmethod
     def pop_row(matrix):
         matrix.pop()
-        
 
 class ListHelper:
 
@@ -73,6 +85,12 @@ class ListHelper:
             return idx
         return None
 
+    @staticmethod
+    def contains(ls , predicate = lambda x: x):
+        for value in ls:
+            if predicate(value): return True
+        return False
+    
     @staticmethod
     def find_first(l, in_set = None, by = lambda x: True):
         "Find first element of list set in by predicate "
@@ -152,7 +170,7 @@ class SlackForm:
             variable_coefficient = current_coefficients[entering_idx]
 
             # TODO maybe not correct return the entering constraints
-            if not variable_coefficient or iszero(variable_coefficient):
+            if not variable_coefficient or FPHelper.iszero(variable_coefficient):
                 retval = constraint 
                 if debug: print("subs => : %s " % (retval))
                 return retval
@@ -225,8 +243,8 @@ class SlackForm:
         # x_nvars will be a psuedo variable used in case the initial
         # simplex is not in basic form.
 
-        for i in range(0,n):
-            for j in range(0,m):
+        for i in range(n):
+            for j in range(m):
                 self.A[i][j+n] = -A[i][j]
 
         if debug:
@@ -263,7 +281,7 @@ class SlackForm:
             print("dependent : %s, independent : %s" %
                   (self.independent,self.dependent))
 
-        leaving_coeff,leaving_idx = list_helper.min_index(self.b)
+        leaving_coeff,leaving_idx = ListHelper.min_index(self.b)
 
         if debug:
             print("leaving_coeff:%d leaving_idx: %d"
@@ -280,17 +298,14 @@ class SlackForm:
 
     def store(self,idx,new_eq):
         "Store constraint back into slack form"
-        self.b[idx] = new_eq.constant
-        self.A[idx] = new_eq.coefficients
-        
+        self.b[idx],self.A[idx] = new_eq.constant, new_eq.coefficients
 
     def substitute_objective(self,entering_constraint,entering_idx):
         obj_cons = self.to_objective_constraint()
         new_obj = obj_cons.substitute_constraint(entering_idx,entering_constraint)
         if debug:
             print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
-        self.c = new_obj.coefficients
-        self.v = new_obj.constant
+        self.v,self.c = new_obj.constant,new_obj.coefficients
         return new_obj
         
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
@@ -340,9 +355,8 @@ class SlackForm:
             print("\nA:\n%s" % pretty_printers.format_table(self.A))
         #
         for idx in self.dependent:
-            if idx == leaving_idx: continue
-            
-            new_equation = self.substitute_equation(idx,entering_constraint,entering_idx)
+            if idx == leaving_idx: continue            
+            self.substitute_equation(idx,entering_constraint,entering_idx)
             
 
         self.substitute_objective(entering_constraint,entering_idx)
@@ -369,16 +383,15 @@ class SlackForm:
             print("independent: %s" %(self.independent))
                   
     def objective_has_positive_coefficients(self):
-        for value in self.c:
-            if value and not iszero(value) and value > 0:
-                return True
-        return False
+        contains = ListHelper.contains
+        ispositive = FPHelper.ispositive
+        return contains(self.c,predicate = ispositive)
+
 
     def pick_entering_idx(self):
-        positive_p =  lambda x : x and (x > 0)
-        find_first_idx  = list_helper.find_first_idx
+        find_first_idx  = ListHelper.find_first_idx
         return find_first_idx(self.c,in_set = self.independent,
-                                     by     = positive_p)
+                                     by     = FPHelper.ispositive)
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
@@ -397,19 +410,20 @@ class SlackForm:
             constant = self.b[idx]
             coeff    = -1 * self.A[idx][entering_idx]
             if debug:
-
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
                 
-            if (not iszero(coeff)) and coeff > 0.0:
+            if FPHelper.ispositive(coeff):
                 slack[idx]  = (constant/coeff)
                 if debug:
                     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
                     if slack[idx]:
                         print("%2.2f",slack[idx])
-                    else: print("")
+                    else: print()
+                    
         if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
         if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
-        min_slack,slack_idx = list_helper.min_index(slack)
+        
+        min_slack,slack_idx = ListHelper.min_index(slack)
         if debug:
             if min_slack:
                 print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
@@ -488,6 +502,18 @@ class Simplex:
         self.n = n
         self.m = m
 
+    @staticmethod
+    def answer_type_str(anst):
+        if anst == -1:
+            return "No solution"
+        if anst == 0:
+            return "Bounded solution"
+        if anst == 1:
+            return "Infinity"
+        else:
+            return "Unrecognized Answer : %s" % anst
+    
+
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
         slackform = SlackForm(A=self.A,b=self.b,c=self.c,v=0,n=self.n,m=self.m)
@@ -502,8 +528,8 @@ class Simplex:
 
         (opt,ansx) = aux_sf.solve()
 
-        if not iszero(opt,rel_tol=1e-06,abs_tol=1e-06):
-            if debug: print("raising infeasible %f %s"%(opt,iszero(opt,rel_tol=1e-09,abs_tol=1e-09)))
+        if not FPHelper.iszero(opt,rel_tol=1e-06,abs_tol=1e-06):
+            if debug: print("raising infeasible %f %s"%(opt,FPHelper.iszero(opt,rel_tol=1e-09,abs_tol=1e-09)))
             raise InfeasibleError()
 
         if debug:
@@ -513,8 +539,7 @@ class Simplex:
 
         new_obj = SlackForm.Constraint(slackform.v,slackform.c)
         for idx in aux_sf.dependent:
-            equation = aux_sf.A[idx]
-            constant = aux_sf.b[idx]
+            constant, equation = aux_sf.b[idx],aux_sf.A[idx]
             entering_constraint = SlackForm.Constraint(constant,equation)
             new_obj = SlackForm.Constraint.substitute_constraint(new_obj,idx,entering_constraint)
             
@@ -546,7 +571,6 @@ class Simplex:
         # remove last entry from constant
         aux_sf.b.pop()
 
-
         # replace the new objective
         aux_sf.replace(c = new_obj.coefficients,
                        v = new_obj.constant)
@@ -569,7 +593,7 @@ class Simplex:
         try:
             if debug:
                 print("Simplex:b %s"%self.b)
-            min_constant, idx = list_helper.min_index(self.b);
+            min_constant, idx = ListHelper.min_index(self.b);
             
             if  min_constant < 0: # 0-comparison
                 if debug:
@@ -630,15 +654,11 @@ class Simplex:
         # to represent x_{nvars}
         aux_A = [[None for x in range(self.m+1)]
                        for y in range(self.n)]
-        # copy A
-        for r in range(self.n):
-            for c in range(self.m):
-                aux_A[r][c] = self.A[r][c]
-        #
+        # copy An
+        MatrixHelper.copy_matrix(aux_A,self.A)
+        
         # set nvars column to -1
-        for i in range(self.n):
-            aux_A[i][self.m]= -1
-        #
+        MatrixHelper.set_column_value(aux_A,self.m,-1)
         return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
 
     def __repr__(self):
@@ -675,7 +695,6 @@ class SimplexTest(unittest.TestCase):
         A = [[-1 ,-1 ],
              [ 1 , 0 ],
              [ 0 , 1 ]]
-        
         b = [-1 ,2 ,2]
         c = [-1 ,2]
         n = 3
@@ -708,26 +727,46 @@ class SimplexTest(unittest.TestCase):
         self.assertEqual(s.optimum,2.0)
     
     def test_read_01(self):
-        simplex = Simplex.parse_file("./tests/01")
+        simplex = Simplex.parse_file("./tests/bounded/01")
         self.assertIsNotNone(simplex)
         self.assertEqual(3,simplex.n)
         self.assertEqual(2,simplex.m)
         self.assertEqual(simplex.n,len(simplex.A))
     
     def test_read_04(self):
-        simplex = Simplex.parse_file("./tests/04")
+        simplex = Simplex.parse_file("./tests/bounded/04")
         anst,ansx = simplex.solve()
         if debug:
             print("%s"%ansx)
     
     def test_solve_01(self):
-        simplex = Simplex.parse_file("./tests/01")
+        simplex = Simplex.parse_file("./tests/bounded/01")
         anst,ansx = simplex.solve()
         if debug:
             print("anst:%s ansx:%s"%(anst,ansx))
         self.assertIsNotNone(anst)
         self.assertIsNotNone(ansx)
 
+    def assertAnswerType(self,expected,fname):
+        simplex = Simplex.parse_file(fname)
+        anst,_=simplex.solve()
+        try:
+            self.assertEqual(anst,expected)
+        except AssertionError:
+            raise AssertionError("Checking %s expected %s got %s " % (fname, Simplex.answer_type_str(expected), Simplex.answer_type_str(anst)))
+        
+    def test_unbounded_files(self):
+        pat = "./tests/inf/[0-9]*"
+        not_answer_p = lambda fname: not fname.endswith(".a")
+        for fname in filter(not_answer_p,glob.iglob(pat)):
+            self.assertAnswerType(1,fname)
+
+
+    def test_nosolution_files(self):
+        pat = "./tests/no/[0-9]*"
+        not_answer_p = lambda fname: not fname.endswith(".a")
+        for fname in filter(not_answer_p,glob.iglob(pat)):
+            self.assertAnswerType(-1,fname)
 
 def run_tests():
     unittest.main(module='simplex',exit=False)
@@ -736,14 +775,12 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "--debug") :
         debug = True
+        
     simplex = Simplex.parse_stream(sys.stdin)
     anst, ansx = simplex.solve()
-    if anst == -1:
-        print("No solution")
+    print(Simplex.answer_type_str(anst))
     if anst == 0:
-        print("Bounded solution")
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-    if anst == 1:
-        print("Infinity")
+
 
 #run_tests()
