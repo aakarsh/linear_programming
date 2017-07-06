@@ -370,7 +370,7 @@ class SlackForm:
                   
     def objective_has_positive_coefficients(self):
         for value in self.c:
-            if value and not iszero(value,rel_tol=1e-6) and value > 0:
+            if value and not iszero(value) and value > 0:
                 return True
         return False
 
@@ -400,7 +400,7 @@ class SlackForm:
 
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
                 
-            if (not iszero(coeff,abs_tol=0.0,rel_tol=1e-20)) and coeff > 0.0:
+            if (not iszero(coeff)) and coeff > 0.0:
                 slack[idx]  = (constant/coeff)
                 if debug:
                     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
