@@ -366,7 +366,7 @@ class SlackForm:
                   
     def objective_has_positive_coefficients(self):
         for value in self.c:
-            if value and value > 0:
+            if value and not isclose(value,0.0,rel_tol=1e-6) and value > 0:
                 return True
         return False
 
@@ -388,20 +388,31 @@ class SlackForm:
             print("b: %s" % self.b)
             print("c: %s" %  self.c)
             print("\nA:\n %s\n" % pretty_printers.format_table(self.A))
-
         
         for idx in self.dependent:
             constant = self.b[idx]
             coeff    = -1 * self.A[idx][entering_idx]
-            if coeff > 0:
+            if debug:
+
+                print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
+                
+            if (not isclose(coeff,0.0,abs_tol=0.0,rel_tol=1e-20)) and coeff > 0.0:
                 slack[idx]  = (constant/coeff)
                 if debug:
-                    print("slack[%d]=> [%2.2f]/[%2.2f] = %2.2f" % (idx,constant,coeff,slack[idx]))
-
+                    print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
+                    if slack[idx]:
+                        print("%2.2f",slack[idx])
+                    else: print("")
+        if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
+        if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
         min_slack,slack_idx = list_helper.min_index(slack)
         if debug:
-            print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
-            print("leave: %d" %slack_idx)
+            if min_slack:
+                print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
+            else:
+                print("min_slack is None slacks: %s",slack )
+                
+            print("leave: %d" % slack_idx)
 
         return slack_idx if min_slack else None 
 
