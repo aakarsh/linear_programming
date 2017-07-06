@@ -124,24 +124,16 @@ class SlackForm:
 
         @staticmethod
         def substitute_objective(simplex,entering_constraint,entering_idx):
-            constraint = SlackForm.Constraint(simplex.v,simplex.c)
-            return SlackForm.Constraint.substitute_constraint(constraint,entering_idx,entering_constraint)
+            constraint = simplex.to_objective_constraint()
+            return constraint.substitute_constraint(entering_idx,entering_constraint)
 
-        @staticmethod
-        def substitute_equation(simplex,equation_idx,entering_constraint,entering_idx):
-            constraint =  SlackForm.Constraint(simplex.b[equation_idx],simplex.A[equation_idx])
-            return SlackForm.Constraint.substitute_constraint(constraint,entering_idx,entering_constraint)
-
-        @staticmethod
-        def substitute_constraint(constraint,entering_idx,entering_constraint):
+        def substitute_constraint(self,entering_idx,entering_constraint):
+            constraint = self
             if debug:
-                print("subs: %-20s @ [%3d] -> %-20s " % (entering_constraint,entering_idx, constraint))
-
+                print("subs: %-20s @ [%3d] => %-20s " % (entering_constraint,entering_idx, constraint))
 
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
-
-
 
             return_coefficients = [None] * len(current_coefficients)
             return_constant     =  None
@@ -181,34 +173,7 @@ class SlackForm:
             return retval
 
 
-        @staticmethod
-        def make_entering_constraint(slackform, leaving_idx, entering_idx):
 
-            A = slackform.A
-            b = slackform.b
-
-            independent = slackform.independent
-            dependent   = slackform.dependent
-
-            nvars = len(independent) + len(dependent)
-
-            pivot_entry = A[leaving_idx][entering_idx]
-            pivot_value = abs(pivot_entry)
-            pivot_sign = -1 if pivot_entry > 0 else 1
-            pivot_inverse = pivot_sign * (1.0/pivot_value)
-
-            entering_constant = b[leaving_idx] * pivot_inverse
-            leaving_equation  = A[leaving_idx]
-
-            entering_equation = [None] * nvars
-            for idx in independent:
-                if not idx == entering_idx and not leaving_equation[idx] is None:
-                    entering_equation[idx] = pivot_inverse * leaving_equation[idx]
-
-            entering_equation[entering_idx] = None
-            entering_equation[leaving_idx]  = -1 * pivot_inverse
-
-            return SlackForm.Constraint(entering_constant,entering_equation)
 
 
     def replace(self,**kwargs):
@@ -300,32 +265,77 @@ class SlackForm:
         # basic solution is feasible :
         # all constants are positive ?
 
+    def to_objective_constraint(self):
+        "Particular equation-id from simplex wrapped  equation"
+        return SlackForm.Constraint(self.v,self.c)
+        
+    def to_constraint(self,equation_idx):
+        "Particular equation-id from simplex wrapped  equation"
+        return SlackForm.Constraint(self.b[equation_idx],self.A[equation_idx])
 
-        # TODO : Put into feasible form
-        #
-        # Not in basic form:
-        #   - Either we can put into basic form
-        #   - Or the equations are infeasible
-        # TODO : Exither to do the basic form here or try to
-        #        find one that is already in basic form
+    def store(self,idx,new_eq):
+        "Store constraint back into slack form"
+        self.b[idx] = new_eq.constant
+        self.A[idx] = new_eq.coefficients
+        
+
+    def substitute_objective(self,entering_constraint,entering_idx):
+        constraint = self.to_objective_constraint()
+        return constraint.substitute_constraint(entering_idx,entering_constraint)
+        
+    def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
+        "Substititue enterint constraint into equation "
+        new_eq  = self.to_constraint(equation_idx).substitute_constraint(entering_idx,entering_constraint)
+        self.store(equation_idx,new_eq)
+
+    def make_pivot_constraint(self,leaving_idx, entering_idx):
+        "Construct constriant based on leaving and entering ids "
+
+        slackform = self
+        A = slackform.A
+        b = slackform.b
+
+        independent = slackform.independent
+        dependent   = slackform.dependent
+
+        nvars = len(independent) + len(dependent)
+
+        pivot_entry = A[leaving_idx][entering_idx]
+        pivot_value = abs(pivot_entry)
+        pivot_sign = -1 if pivot_entry > 0 else 1
+        pivot_inverse = pivot_sign * (1.0/pivot_value)
+
+        entering_constant = b[leaving_idx] * pivot_inverse
+        leaving_equation  = A[leaving_idx]
+
+        entering_equation = [None] * nvars
+        for idx in independent:
+            if not idx == entering_idx and not leaving_equation[idx] is None:
+                entering_equation[idx] = pivot_inverse * leaving_equation[idx]
+
+        entering_equation[entering_idx] = None
+        entering_equation[leaving_idx]  = -1 * pivot_inverse
+
+        return SlackForm.Constraint(entering_constant,entering_equation)
+
+    
     def pivot(self,entering_idx,leaving_idx):
         #
         Constraint = SlackForm.Constraint
-        entering_constraint = Constraint.make_entering_constraint(self,
-                                                                  leaving_idx,
-                                                                  entering_idx)        
-        entering_constraint.store(entering_idx,self)
+        entering_constraint = self.make_pivot_constraint(leaving_idx,entering_idx)
+        self.store(entering_idx,entering_constraint)
+
         if debug:                
-            print("(Eq:%d) -> :%s" % (entering_idx,entering_constraint))
+            print("(Eq:%d) => :%s" % (entering_idx,entering_constraint))
             print("\nA:\n%s" % pretty_printers.format_table(self.A))
         #
         for idx in self.dependent:
             if idx == leaving_idx:
                 continue
-            new_equation = Constraint.substitute_equation(self,idx,entering_constraint,entering_idx)
-            new_equation.store(idx,self)
+            new_equation = self.substitute_equation(idx,entering_constraint,entering_idx)
 
-        new_objective = Constraint.substitute_objective(self,entering_constraint,entering_idx)
+
+        new_objective = self.substitute_objective(entering_constraint,entering_idx)
         if debug:
             print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_objective))
 
@@ -467,10 +477,8 @@ class Simplex:
         nvars = self.n + self.m
 
         if debug:
-            print("%d -> (dependent) -> %d " % (nvars,min_idx))
-
-
-            
+            print("%d => (dependent) => %d " % (nvars,min_idx))
+        
         aux_sf.pivot( self.n + self.m , min_idx)
 
         (opt,ansx) = aux_sf.solve()
@@ -481,7 +489,7 @@ class Simplex:
         new_objective = SlackForm.Constraint(slackform.v,slackform.c)
 
         if debug:
-            print("dependent : %s",aux_sf.dependent)
+            print("dependent : %s" % aux_sf.dependent)
 
         for idx in aux_sf.dependent:
             equation = aux_sf.A[idx]
