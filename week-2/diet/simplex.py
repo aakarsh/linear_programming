@@ -5,8 +5,11 @@ import sys
 import unittest
 import itertools
 
-debug = True
+debug = False
 
+def isclose(a, b, rel_tol=1e-09, abs_tol=1e-09):
+        return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+    
 class UnboundedError(Exception):
     "Raised when the solution for given equations is unbounded "
     pass
@@ -484,7 +487,8 @@ class Simplex:
 
         (opt,ansx) = aux_sf.solve()
 
-        if opt != 0.0:
+        if not isclose(opt,0.0):
+            if debug: print("raising infeasible %f %s"%(opt,isclose(opt,0,rel_tol=1e-09,abs_tol=1e-09)))
             raise InfeasibleError()
 
         if debug:
@@ -556,7 +560,7 @@ class Simplex:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
                 simplex_basic_form = self.find_basic_feasible(idx)
                 try:
-                    print("-"*100)
+                    if debug: print("-"*100)
                     opt,ansx = simplex_basic_form.solve()
                     self.optimum = opt
                     self.assignment = ansx
@@ -664,49 +668,49 @@ class SimplexTest(unittest.TestCase):
         opt,ass = s.solve()
         self.assertEqual(s.optimum,4.0)
 
-    # def test_feasible_start(self):
-    #     A = [[1 ,1 ,3 ],
-    #          [2 ,2 ,5 ],
-    #          [4 ,1 ,2 ]]
-    #     b = [30 ,24 ,36]
-    #     c = [3 ,1 ,2]
-    #     n = 3
-    #     m = 3
-    #     s = Simplex(A,b,c,n,m)
-    #     opt,ass = s.solve()
-    #     self.assertEqual(s.optimum,28)
+    def test_feasible_start(self):
+        A = [[1 ,1 ,3 ],
+             [2 ,2 ,5 ],
+             [4 ,1 ,2 ]]
+        b = [30 ,24 ,36]
+        c = [3 ,1 ,2]
+        n = 3
+        m = 3
+        s = Simplex(A,b,c,n,m)
+        opt,ass = s.solve()
+        self.assertEqual(s.optimum,28)
     
-    # def test_infeasible_start(self):
-    #     A = [[ 2 ,-1],
-    #          [ 1 ,-5]]
-    #     b = [2, -4]
-    #     c = [2, -1]
-    #     n = 2
-    #     m = 2
-    #     s = Simplex(A,b,c,n,m)
-    #     opt,ass = s.solve()
-    #     self.assertEqual(s.optimum,2.0)
+    def test_infeasible_start(self):
+        A = [[ 2 ,-1],
+             [ 1 ,-5]]
+        b = [2, -4]
+        c = [2, -1]
+        n = 2
+        m = 2
+        s = Simplex(A,b,c,n,m)
+        opt,ass = s.solve()
+        self.assertEqual(s.optimum,2.0)
     
-    # def test_read_01(self):
-    #     simplex = Simplex.parse_file("./tests/01")
-    #     self.assertIsNotNone(simplex)
-    #     self.assertEqual(3,simplex.n)
-    #     self.assertEqual(2,simplex.m)
-    #     self.assertEqual(simplex.n,len(simplex.A))
+    def test_read_01(self):
+        simplex = Simplex.parse_file("./tests/01")
+        self.assertIsNotNone(simplex)
+        self.assertEqual(3,simplex.n)
+        self.assertEqual(2,simplex.m)
+        self.assertEqual(simplex.n,len(simplex.A))
     
-    # def test_read_04(self):
-    #     simplex = Simplex.parse_file("./tests/04")
-    #     anst,ansx = simplex.solve()
-    #     if debug:
-    #         print("%s"%ansx)
+    def test_read_04(self):
+        simplex = Simplex.parse_file("./tests/04")
+        anst,ansx = simplex.solve()
+        if debug:
+            print("%s"%ansx)
     
-    # def test_solve_01(self):
-    #     simplex = Simplex.parse_file("./tests/01")
-    #     anst,ansx = simplex.solve()
-    #     if debug:
-    #         print("anst:%s ansx:%s"%(anst,ansx))
-    #     self.assertIsNotNone(anst)
-    #     self.assertIsNotNone(ansx)
+    def test_solve_01(self):
+        simplex = Simplex.parse_file("./tests/01")
+        anst,ansx = simplex.solve()
+        if debug:
+            print("anst:%s ansx:%s"%(anst,ansx))
+        self.assertIsNotNone(anst)
+        self.assertIsNotNone(ansx)
 
 
 def run_tests():
