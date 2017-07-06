@@ -45,6 +45,10 @@ class MatrixHelper:
     @staticmethod
     def pop_column(matrix):
         for row in matrix: row.pop()
+
+    @staticmethod
+    def pop_row(matrix):
+        matrix.pop()
         
 
 class ListHelper:
@@ -130,7 +134,7 @@ class SlackForm:
         def substitute_constraint(self,entering_idx,entering_constraint):
             constraint = self
             if debug:
-                print("subs: %-20s @ [%3d] => %-20s " % (entering_constraint,entering_idx, constraint))
+                print("subs: %-20s @ [%3d] => %-20s " % (entering_constraint, entering_idx, constraint))
 
             current_coefficients  = constraint.coefficients
             current_constant      = constraint.constant
@@ -140,7 +144,7 @@ class SlackForm:
 
             variable_coefficient = current_coefficients[entering_idx]
 
-            # TODO maybe not correct retuern the enteirng constraints
+            # TODO maybe not correct return the entering constraints
             if not variable_coefficient or variable_coefficient == 0:
                 retval = constraint 
                 if debug: print("subs => : %s " % (retval))
@@ -154,7 +158,7 @@ class SlackForm:
 
             return_constant = current_constant + (variable_coefficient * entering_constant)
 
-            for var_idx in range(0,len(current_coefficients)):
+            for var_idx in range(len(current_coefficients)):
                 if var_idx == entering_idx:
                     continue
 
@@ -171,10 +175,6 @@ class SlackForm:
             if debug: print("subs => : %s " % (retval))
 
             return retval
-
-
-
-
 
     def replace(self,**kwargs):
         if "A" in kwargs:
@@ -262,8 +262,6 @@ class SlackForm:
             print("leaving_coeff:%d leaving_idx: %d"
                   % (leaving_coeff,leaving_idx))
 
-        # basic solution is feasible :
-        # all constants are positive ?
 
     def to_objective_constraint(self):
         "Particular equation-id from simplex wrapped  equation"
@@ -280,8 +278,13 @@ class SlackForm:
         
 
     def substitute_objective(self,entering_constraint,entering_idx):
-        constraint = self.to_objective_constraint()
-        return constraint.substitute_constraint(entering_idx,entering_constraint)
+        obj_cons = self.to_objective_constraint()
+        new_obj = obj_cons.substitute_constraint(entering_idx,entering_constraint)
+        if debug:
+            print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
+        self.c = new_obj.coefficients
+        self.v = new_obj.constant
+        return new_obj
         
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
         "Substititue enterint constraint into equation "
@@ -320,27 +323,22 @@ class SlackForm:
 
     
     def pivot(self,entering_idx,leaving_idx):
+        "Pivot on the entering and leaving ids"
         #
-        Constraint = SlackForm.Constraint
         entering_constraint = self.make_pivot_constraint(leaving_idx,entering_idx)
         self.store(entering_idx,entering_constraint)
-
+        # 
         if debug:                
             print("(Eq:%d) => :%s" % (entering_idx,entering_constraint))
             print("\nA:\n%s" % pretty_printers.format_table(self.A))
         #
         for idx in self.dependent:
-            if idx == leaving_idx:
-                continue
+            if idx == leaving_idx: continue
+            
             new_equation = self.substitute_equation(idx,entering_constraint,entering_idx)
+            
 
-
-        new_objective = self.substitute_objective(entering_constraint,entering_idx)
-        if debug:
-            print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_objective))
-
-        self.c = new_objective.coefficients
-        self.v = new_objective.constant
+        self.substitute_objective(entering_constraint,entering_idx)
 
         # move leaving_idx  from dependent   to independent set
         # move entering_idx from independent to dependent set
@@ -411,37 +409,40 @@ class SlackForm:
     def solve(self):
         if debug:
             print("Enter SlackForm.solve():")
+        cnt = 0
 
         while self.objective_has_positive_coefficients():
             if debug:
                 print(self)
-
+            cnt+=1
+            
+            if debug:
+                print("pivot: %d" % cnt)
+                print("%s" % pretty_printers.format_table(self.A))
+                print(" Objective > %s: %s " % (self.c,self.v))
+            
             entering_idx = self.pick_entering_idx()
             leaving_idx  = self.pick_leaving_idx(entering_idx)
 
-            if  (leaving_idx is None)  or  (entering_idx is None):  # unbounded
+            if (leaving_idx is None)  or  (entering_idx is None):  # unbounded
                 raise UnboundedError()
 
             if debug:
-                print("Entering Idx : %d Objective Coefficent %d " % (entering_idx,self.c[entering_idx]))
-                print("Leaving  Idx : %d Leaving Equation %s " % (leaving_idx,self.A[leaving_idx]))
                 print("pivot:  %s >> (dep) >> %s" % (entering_idx,leaving_idx))
 
             self.pivot(entering_idx , leaving_idx)
 
         if debug:
             print("\nA:\n%s\n" % pretty_printers.format_table(self.A))
-            print("\nb:%s\n" % self.b)
-            print("objective after pivots: %s"%self.c)
+            print("\nb:%s\n"   % self.b)
+            print("objective after pivots: %s" % self.c)
 
-        #
         # Variable assignment after pivot stops.
         assignment = [0] * len(self.b)
         #
         # All dependent variables get value of constant
         for var_idx in self.dependent:
             assignment[var_idx] = self.b[var_idx]
-        #
         #
         opt_value = self.v
         for i in range(0,len(self.c)):
@@ -486,22 +487,23 @@ class Simplex:
         if opt != 0.0:
             raise InfeasibleError()
 
-        new_objective = SlackForm.Constraint(slackform.v,slackform.c)
-
         if debug:
             print("dependent : %s" % aux_sf.dependent)
 
+        if debug: print("BEGIN:subsitite-auxiliary-form-objective ")
+
+        new_obj = SlackForm.Constraint(slackform.v,slackform.c)
         for idx in aux_sf.dependent:
             equation = aux_sf.A[idx]
             constant = aux_sf.b[idx]
             entering_constraint = SlackForm.Constraint(constant,equation)
-            new_objective = SlackForm.Constraint.substitute_constraint(new_objective,
-                                                                       idx,
-                                                                       entering_constraint)
+            new_obj = SlackForm.Constraint.substitute_constraint(new_obj,idx,entering_constraint)
+            
         if debug:
-            print("Substituted Objective: %s" % new_objective)
+            print("sub-obj: %s" % new_obj)
+        if debug: print("END:subsitite-auxiliary-form-objective ")            
 
-        ListHelper.set_values(new_objective.coefficients, None, aux_sf.dependent)
+        ListHelper.set_values(new_obj.coefficients, None, aux_sf.dependent)
         ListHelper.set_values(aux_sf.b, None, aux_sf.independent )
 
         # set all unused rows  and columns to None
@@ -509,11 +511,10 @@ class Simplex:
                                                 rows= aux_sf.independent,
                                                 columns= aux_sf.dependent)
 
-
         # using new objective and return new slack form need to remove
         # x_nvars
         if debug:
-            print("Objective: %s" % new_objective)
+            print("Objective: %s" % new_obj)
             print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
             print("b: \n%s" % aux_sf.b)
             print("depenedents:   \n%s"  % aux_sf.dependent)
@@ -521,23 +522,22 @@ class Simplex:
 
         # remove last entry from rows
         MatrixHelper.pop_column(aux_sf.A)
+        MatrixHelper.pop_row(aux_sf.A)
 
         # remove last entry from constant
         aux_sf.b.pop()
 
-        # remove last entry from objective
-        new_objective.coefficients.pop()
 
         # replace the new objective
-        aux_sf.replace(c = new_objective.coefficients,
-                       v = new_objective.constant)
+        aux_sf.replace(c = new_obj.coefficients,
+                       v = new_obj.constant)
 
         # remove one independent variable
         aux_sf.independent.remove(nvars)
         aux_sf.replace(m=len(aux_sf.independent)-1)
 
         if debug:
-            print("objective: %s " % new_objective)
+            print("objective: %s " % new_obj)
             print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
             print("b: \n%s" % aux_sf.b)
             print("depenedents:   \n%s"  % aux_sf.dependent)
@@ -556,6 +556,7 @@ class Simplex:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
                 simplex_basic_form = self.find_basic_feasible(idx)
                 try:
+                    print("-"*100)
                     opt,ansx = simplex_basic_form.solve()
                     self.optimum = opt
                     self.assignment = ansx
@@ -651,7 +652,6 @@ class SimplexTest(unittest.TestCase):
 
     def test_01(self):
         debug=True
-        
         A = [[-1 ,-1 ],
              [ 1 , 0 ],
              [ 0 , 1 ]]
@@ -662,7 +662,7 @@ class SimplexTest(unittest.TestCase):
         m = 2
         s = Simplex(A,b,c,n,m)
         opt,ass = s.solve()
-        self.assertEqual(s.optimum,2)
+        self.assertEqual(s.optimum,4.0)
 
     # def test_feasible_start(self):
     #     A = [[1 ,1 ,3 ],
@@ -675,7 +675,7 @@ class SimplexTest(unittest.TestCase):
     #     s = Simplex(A,b,c,n,m)
     #     opt,ass = s.solve()
     #     self.assertEqual(s.optimum,28)
-    #
+    
     # def test_infeasible_start(self):
     #     A = [[ 2 ,-1],
     #          [ 1 ,-5]]
@@ -686,20 +686,20 @@ class SimplexTest(unittest.TestCase):
     #     s = Simplex(A,b,c,n,m)
     #     opt,ass = s.solve()
     #     self.assertEqual(s.optimum,2.0)
-    #
+    
     # def test_read_01(self):
     #     simplex = Simplex.parse_file("./tests/01")
     #     self.assertIsNotNone(simplex)
     #     self.assertEqual(3,simplex.n)
     #     self.assertEqual(2,simplex.m)
     #     self.assertEqual(simplex.n,len(simplex.A))
-    #
+    
     # def test_read_04(self):
     #     simplex = Simplex.parse_file("./tests/04")
     #     anst,ansx = simplex.solve()
     #     if debug:
     #         print("%s"%ansx)
-    #
+    
     # def test_solve_01(self):
     #     simplex = Simplex.parse_file("./tests/01")
     #     anst,ansx = simplex.solve()
