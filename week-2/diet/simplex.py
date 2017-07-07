@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import glob
 import os
@@ -12,6 +12,9 @@ global_tolerance = 1e-09
 
 class FPHelper:
 
+    def __init__(self,x):
+        self.x = x
+        
     @staticmethod
     def ispositive(x):
         return x and (not FPHelper.iszero(x)) and (x > 0.0)
@@ -19,7 +22,7 @@ class FPHelper:
     @staticmethod
     def isclose(a, b, rel_tol=global_tolerance, abs_tol=global_tolerance):
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
-
+    
     @staticmethod
     def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
         return FPHelper.isclose(a,0.0,rel_tol,abs_tol)
@@ -126,7 +129,6 @@ class list_wrapper():
     def __iter__(self):         return iter(self.ls)
     def __len__(self):          return len(self.ls)
 
-
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
 
@@ -139,15 +141,7 @@ class list_wrapper():
         return None
 
     def contains(ls , predicate = lambda x: x):
-        for value in ls:
-            if predicate(value): return True
-        return False
-
-    def find_first(l, in_set = None, by = lambda x: True):
-        "Find first element of list set in by predicate "
-        for (idx, value) in l.zip_set(in_set,by):
-            return value
-        return None
+	return any(predicate(v) for v in ls)
 
     def set_values(l, value,idxs ):
         for idx in idxs: l[idx] = value
@@ -155,9 +149,7 @@ class list_wrapper():
     def min_index(l,max=float('inf')):
         "Return a pair of (value,index) of elment with minimum index"
         zl = zip(l,range(len(l)))
-        zp = min(zl, key = lambda z: z[0] if z[0] else max)
-        return zp
-
+        return min(zl, key = lambda z: z[0] if z[0] else max)
 
 class SlackForm:
     "Represents simplex in slack form ..."
@@ -166,21 +158,14 @@ class SlackForm:
         "Helper class to deal with constraints..."
 
         def __init__(self,constant,coefficients):
-            self.constant = constant
-            self.coefficients = coefficients
+            self.constant,self.coefficients = constant,coefficients
 
         def store(self,idx,slackform):
             "Store constraint back into slack form"
-            slackform.b[idx] = self.constant
-            slackform.A[idx] = self.coefficients
+            slackform.b[idx],slackform.A[idx] = self.constant,self.coefficients
 
         def __repr__(self):
             return " (%s) %s" % (self.constant, self.coefficients)
-
-        @staticmethod
-        def substitute_objective(simplex,entering_constraint,entering_idx):
-            constraint = simplex.to_objective_constraint()
-            return constraint.substitute_constraint(entering_idx,entering_constraint)
 
         def substitute_constraint(self,entering_idx,other):
             if debug:
@@ -193,9 +178,9 @@ class SlackForm:
                 if debug: print("subs => : %s " % (self))
                 return self
 
-            opt = lambda v :  v if v else 0            
-            inc = lambda a,b,c : opt(a) + opt(b)*opt(c)            
-            inc2 = lambda a,c : inc(a,variable_coefficient,c)
+            opt    = lambda v :  v if v else 0            
+            inc    = lambda a,b,c : opt(a) + opt(b)*opt(c)            
+            inc2   = lambda a,c : inc(a,variable_coefficient,c)
             zip_id = lambda id,l1,l2: (l1[id],l2[id])
 
             return_coefficients = [None] * len(self.coefficients)
@@ -430,6 +415,7 @@ class SlackForm:
         if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
 
         min_slack,slack_idx = list_wrapper(slack).min_index()
+        
         if debug:
             if min_slack:
                 print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
@@ -687,91 +673,6 @@ class Simplex:
             return Simplex.parse_stream(stream)
 
 
-class SimplexTest(unittest.TestCase):
-
-    def setUp(self):
-        pass
-
-    def test_01(self):
-        debug=True
-        A = [[-1 ,-1 ],
-             [ 1 , 0 ],
-             [ 0 , 1 ]]
-        b = [-1 ,2 ,2]
-        c = [-1 ,2]
-        n = 3
-        m = 2
-        s = Simplex(A,b,c,n,m)
-        opt,ass = s.solve()
-        self.assertEqual(s.optimum,4.0)
-
-    def test_feasible_start(self):
-        A = [[1 ,1 ,3 ],
-             [2 ,2 ,5 ],
-             [4 ,1 ,2 ]]
-        b = [30 ,24 ,36]
-        c = [3 ,1 ,2]
-        n = 3
-        m = 3
-        s = Simplex(A,b,c,n,m)
-        opt,ass = s.solve()
-        self.assertEqual(s.optimum,28)
-
-    def test_infeasible_start(self):
-        A = [[ 2 ,-1],
-             [ 1 ,-5]]
-        b = [2, -4]
-        c = [2, -1]
-        n = 2
-        m = 2
-        s = Simplex(A,b,c,n,m)
-        opt,ass = s.solve()
-        self.assertEqual(s.optimum,2.0)
-
-    def test_read_01(self):
-        simplex = Simplex.parse_file("./tests/bounded/01")
-        self.assertIsNotNone(simplex)
-        self.assertEqual(3,simplex.n)
-        self.assertEqual(2,simplex.m)
-        self.assertEqual(simplex.n,len(simplex.A))
-
-    def test_read_04(self):
-        simplex = Simplex.parse_file("./tests/bounded/04")
-        anst,ansx = simplex.solve()
-        if debug:
-            print("%s"%ansx)
-
-    def test_solve_01(self):
-        simplex = Simplex.parse_file("./tests/bounded/01")
-        anst,ansx = simplex.solve()
-        if debug:
-            print("anst:%s ansx:%s"%(anst,ansx))
-        self.assertIsNotNone(anst)
-        self.assertIsNotNone(ansx)
-
-    def assertAnswerType(self,expected,fname):
-        simplex = Simplex.parse_file(fname)
-        anst,_=simplex.solve()
-        try:
-            self.assertEqual(anst,expected)
-        except AssertionError:
-            raise AssertionError("Checking %s expected %s got %s " % (fname, Simplex.answer_type_str(expected), Simplex.answer_type_str(anst)))
-
-    def test_unbounded_files(self):
-        pat = "./tests/inf/[0-9]*"
-        not_answer_p = lambda fname: not fname.endswith(".a")
-        for fname in filter(not_answer_p,glob.iglob(pat)):
-            self.assertAnswerType(1,fname)
-
-    def test_nosolution_files(self):
-        pat = "./tests/no/[0-9]*"
-        not_answer_p = lambda fname: not fname.endswith(".a")
-        for fname in filter(not_answer_p,glob.iglob(pat)):
-            self.assertAnswerType(-1,fname)
-
-def run_tests():
-    unittest.main(module='simplex',exit=False)
-
 if __name__ == "__main__":
 
     if len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "--debug") :
@@ -782,6 +683,3 @@ if __name__ == "__main__":
     print(Simplex.answer_type_str(anst))
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-
-
-#run_tests()
