@@ -31,44 +31,69 @@ class InfeasibleError(Exception):
     "Raised when the solution for given equations is infeasible(has no-solution)."
     pass
 
-class MatrixHelper:
+class Matrix:
+    "Simplistic matrix class."
+    
+    def __init__(self,nrows,ncols,initial=None):
+        self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows)]
 
-    @staticmethod
+    def __getitem__(self,idx):
+        return self.matrix[idx]
+    
+    def __delitem__(self,idx):
+        del self.matrix[idx]
+        
+    def __setitem__(self,idx,value):
+        lv,lm = len(value),len(self.matrix[idx])
+        if lv != lm:
+            raise ValueError("%d does not match row length : %d" % (lv,lm))
+        self.matrix[idx] = value
+
+    def __iter__(self):
+        return iter(self.matrix)
+
+    def __len__(self):
+        return len(self.matrix)
+
+    def __repr__(self):
+        return pretty_printers.format_table(self.matrix)
+
+    def pop(self):
+        self.matrix.pop()
+
+    def pop_column(matrix):
+        for row in matrix: row.pop()
+
+    def pop_row(matrix):
+        matrix.pop()
+        
     def set_value_all_rows(matrix,row_idxs, value):
         for row in row_idxs:
             matrix[row] = [value] * len(matrix[row])
 
-    @staticmethod
     def set_column_value(matrix,col,value):
         for row in range(len(matrix)):
             matrix[row][col]= value
 
-    @staticmethod
     def set_value_all_columns(matrix,col_idxs, value):
         for row in range(len(matrix)):
             for col in col_idxs:
                 matrix[row][col] = value
 
-    @staticmethod
-    def set_value_all_rows_columns(matrix,value,**kwargs):
-        if "columns" in kwargs:
-            MatrixHelper.set_value_all_columns(matrix,kwargs["columns"],value)
-        if "rows" in kwargs:
-            MatrixHelper.set_value_all_rows(matrix,kwargs["rows"],value)
 
-    @staticmethod
-    def copy_matrix(m1,m2):
+    def set_value(self,value,**kwargs):
+        if "columns" in kwargs:
+            self.set_value_all_columns(kwargs["columns"],value)
+        if "rows" in kwargs:
+            self.set_value_all_rows(kwargs["rows"],value)
+
+
+    def copy(m1,m2):
         for r in range(len(m2)):
             for c in range(len(m2[r])):
                 m1[r][c] = m2[r][c]
 
-    @staticmethod
-    def pop_column(matrix):
-        for row in matrix: row.pop()
 
-    @staticmethod
-    def pop_row(matrix):
-        matrix.pop()
 
 class ListHelper:
 
@@ -235,7 +260,7 @@ class SlackForm:
         # A represents the table of size totalxtotal
         # with None possible entreis
         nvars = n+m
-        self.A = [ [None for x in range(nvars)] for y in range(nvars)]
+        self.A = Matrix(nvars,nvars)
 
         # We will use a numbering where
         # dependent variables will be from [x_n to x_nvars)
@@ -248,13 +273,13 @@ class SlackForm:
                 self.A[i][j+n] = -A[i][j]
 
         if debug:
-            print("\nA:")
-            print(pretty_printers.format_table(self.A))
+            print("\nA:\n%s" % self.A)
             print("Input Equations:")
             print(pretty_printers.format_table(A))
 
         if debug:
             print("orig-b:%s"% b)
+            
         self.b = list(map(float,b))
 
         # Fill rest of it with None
@@ -551,9 +576,7 @@ class Simplex:
         ListHelper.set_values(aux_sf.b, None, aux_sf.independent )
 
         # set all unused rows  and columns to None
-        MatrixHelper.set_value_all_rows_columns(aux_sf.A, None,
-                                                rows= aux_sf.independent,
-                                                columns= aux_sf.dependent)
+        aux_sf.A.set_value(None,rows= aux_sf.independent,columns= aux_sf.dependent)
 
         # using new objective and return new slack form need to remove
         # x_nvars
@@ -565,8 +588,8 @@ class Simplex:
             print("indepenedents: \n%s"  % aux_sf.independent)
 
         # remove last entry from rows
-        MatrixHelper.pop_column(aux_sf.A)
-        MatrixHelper.pop_row(aux_sf.A)
+        aux_sf.A.pop_column()
+        aux_sf.A.pop_row()
 
         # remove last entry from constant
         aux_sf.b.pop()
@@ -581,7 +604,7 @@ class Simplex:
 
         if debug:
             print("objective: %s " % new_obj)
-            print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
+            print("A: \n%s" % aux_sf.A)
             print("b: \n%s" % aux_sf.b)
             print("depenedents:   \n%s"  % aux_sf.dependent)
             print("indepenedents: \n%s"  % aux_sf.independent)
@@ -652,13 +675,13 @@ class Simplex:
         #
         # simplex will have one extra column and row
         # to represent x_{nvars}
-        aux_A = [[None for x in range(self.m+1)]
-                       for y in range(self.n)]
+        aux_A = Matrix(self.n,self.m+1)
+
         # copy An
-        MatrixHelper.copy_matrix(aux_A,self.A)
+        aux_A.copy(self.A)
         
         # set nvars column to -1
-        MatrixHelper.set_column_value(aux_A,self.m,-1)
+        aux_A.set_column_value(self.m,-1)
         return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
 
     def __repr__(self):
