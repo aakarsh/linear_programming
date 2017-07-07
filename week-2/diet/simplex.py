@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 import itertools
+import functools
 
 debug = False
 global_tolerance = 1e-09
@@ -79,7 +80,7 @@ class Matrix:
                         output += "%f"% float(col)
                     else:
                         output +="%5s"%"None"
-                output +=" | "
+                    output +=" | "
                 output += "\n"
             return output
 
@@ -181,44 +182,30 @@ class SlackForm:
             constraint = simplex.to_objective_constraint()
             return constraint.substitute_constraint(entering_idx,entering_constraint)
 
-        def substitute_constraint(self,entering_idx,entering_constraint):
-            constraint = self
+        def substitute_constraint(self,entering_idx,other):
             if debug:
-                print("subs: %-20s @ [%3d] => %-20s " % (entering_constraint, entering_idx, constraint))
+                print("subs: %-20s @ [%3d] => %-20s " % (other, entering_idx, self))
 
-            current_coefficients  = constraint.coefficients
-            current_constant      = constraint.constant
-
-            return_coefficients = [None] * len(current_coefficients)
-            return_constant     =  None
-
-            variable_coefficient = current_coefficients[entering_idx]
-
+            variable_coefficient = self.coefficients[entering_idx]
+            
             # TODO maybe not correct return the entering constraints
             if not variable_coefficient or FPHelper.iszero(variable_coefficient):
-                retval = constraint
-                if debug: print("subs => : %s " % (retval))
-                return retval
+                if debug: print("subs => : %s " % (self))
+                return self
 
-            entering_constant = entering_constraint.constant
-            entering_coeffs   = entering_constraint.coefficients
+            opt = lambda v :  v if v else 0            
+            inc = lambda a,b,c : opt(a) + opt(b)*opt(c)            
+            inc2 = lambda a,c : inc(a,variable_coefficient,c)
+            zip_id = lambda id,l1,l2: (l1[id],l2[id])
 
-            if not current_constant:
-                current_constant = 0.0
+            return_coefficients = [None] * len(self.coefficients)
+            return_constant     =  None
 
-            return_constant = current_constant + (variable_coefficient * entering_constant)
-
-            for var_idx in range(len(current_coefficients)):
-                if var_idx == entering_idx:
-                    continue
-
-                current_coefficient = current_coefficients[var_idx]
-                entering_coeff      =  entering_coeffs[var_idx]  if entering_coeffs[var_idx]  else 0
-
-                if current_coefficient:
-                    return_coefficients[var_idx] = current_coefficient + ( variable_coefficient * entering_coeff )
-                else: # no current coefficent use subsitituded value
-                    return_coefficients[var_idx] = variable_coefficient * entering_coeff
+            return_constant = inc2(self.constant,other.constant)
+            
+            for var_idx in filter(lambda idx: idx!= entering_idx, range(len(self.coefficients))):
+                z = functools.partial(zip_id,var_idx)
+                return_coefficients[var_idx] = inc2(*z(self.coefficients,other.coefficients))
 
             retval = SlackForm.Constraint(return_constant,return_coefficients)
 
