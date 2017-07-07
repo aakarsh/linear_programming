@@ -32,26 +32,29 @@ class InfeasibleError(Exception):
     pass
 
 class Matrix:
-    
+
     "Simplistic matrix class."
 
-    def __init__(self,nrows,ncols,initial=None,matrix=None):
-        if matrix:
-            self.matrix = matrix
+    def __init__(self,nrows = None, ncols = None,**kwargs):
+        if "matrix" in kwargs and kwargs["matrix"]:
+            self.matrix = kwargs["matrix"]
         else:
+            initial = None
+            if "initial" in kwargs and kwargs["initial"]:
+                initial = kwargs["initial"]
             self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows) ]
 
     def __getitem__(self,idx):  return self.matrix[idx]
     def __delitem__(self,idx):  del self.matrix[idx]
     def __iter__(self):         return iter(self.matrix)
     def __len__(self):          return len(self.matrix)
-    
-    def pop(self):              self.matrix.pop()        
+
+    def pop(self):              self.matrix.pop()
     def pop_row(self):          self.pop()
-    
+
     def pop_column(matrix):
         for row in matrix: row.pop()
-        
+
     def __setitem__(self,idx,value):
         lv,lm = len(value),len(self.matrix[idx])
         if lv != lm:
@@ -61,7 +64,7 @@ class Matrix:
     def __repr__(self):
         return Matrix.PrettyPrinter.format_table(self.matrix)
 
-    class PrettyPrinter:        
+    class PrettyPrinter:
         @staticmethod
         def format_table(matrix):
             "Format matrix as a table"
@@ -79,7 +82,7 @@ class Matrix:
                 output +=" | "
                 output += "\n"
             return output
-    
+
     def set_value_all_rows(matrix,row_idxs, value):
         for row in row_idxs:
             matrix[row] = [value] * len(matrix[row])
@@ -104,28 +107,28 @@ class Matrix:
             for c in range(len(m2[r])):
                 m1[r+row_offset][c+column_offset] = m2[r][c]
 
-class list_wrapper():    
+class list_wrapper():
     "Wrapper class around built in list providing some method"
-    
+
     def __init__(self,*args):
         if len(args) == 1 and isinstance(args[0],list):
             self.ls = args[0]
         else:
             self.ls = args
-            
+
     def __repr__(self): return self.ls.__repr__()
     def __getitem__(self,idx):  return self.ls[idx]
     def __delitem__(self,idx):  del self.ls[idx]
     def __setitem__(self,idx,value):
         self.ls[idx] = value
-        
+
     def __iter__(self):         return iter(self.ls)
     def __len__(self):          return len(self.ls)
-    
-        
+
+
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
-    
+
     def find_first_idx(l, in_set = None, by = lambda x: True):
         "Find first element of list set in by predicate "
         if not in_set:
@@ -133,7 +136,7 @@ class list_wrapper():
         for (idx, value) in l.zip_set(in_set,by):
             return idx
         return None
-    
+
     def contains(ls , predicate = lambda x: x):
         for value in ls:
             if predicate(value): return True
@@ -144,7 +147,7 @@ class list_wrapper():
         for (idx, value) in l.zip_set(in_set,by):
             return value
         return None
-    
+
     def set_values(l, value,idxs ):
         for idx in idxs: l[idx] = value
 
@@ -403,8 +406,7 @@ class SlackForm:
             print("independent: %s" %(self.independent))
 
     def objective_has_positive_coefficients(self):
-        ispositive = FPHelper.ispositive
-        return list_wrapper(self.c).contains(predicate = ispositive)
+        return list_wrapper(self.c).contains(predicate = FPHelper.ispositive)
 
     def pick_entering_idx(self):
         return list_wrapper(self.c).find_first_idx(in_set = self.independent,
