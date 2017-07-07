@@ -35,8 +35,11 @@ class Matrix:
     
     "Simplistic matrix class."
 
-    def __init__(self,nrows,ncols,initial=None):
-        self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows) ]
+    def __init__(self,nrows,ncols,initial=None,matrix=None):
+        if matrix:
+            self.matrix = matrix
+        else:
+            self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows) ]
 
     def __getitem__(self,idx):  return self.matrix[idx]
     def __delitem__(self,idx):  del self.matrix[idx]
@@ -56,8 +59,27 @@ class Matrix:
         self.matrix[idx] = value
 
     def __repr__(self):
-        return pretty_printers.format_table(self.matrix)
+        return Matrix.PrettyPrinter.format_table(self.matrix)
 
+    class PrettyPrinter:        
+        @staticmethod
+        def format_table(matrix):
+            "Format matrix as a table"
+            output =""
+            for row in matrix:
+                first_col = True
+                for col in row:
+                    if first_col:
+                        output += "| "
+                        first_col=False
+                    if not col is None:
+                        output += "%f"% float(col)
+                    else:
+                        output +="%5s"%"None"
+                output +=" | "
+                output += "\n"
+            return output
+    
     def set_value_all_rows(matrix,row_idxs, value):
         for row in row_idxs:
             matrix[row] = [value] * len(matrix[row])
@@ -132,28 +154,6 @@ class list_wrapper():
         zp = min(zl, key = lambda z: z[0] if z[0] else max)
         return zp
 
-class PrettyPrinters:
-
-    @staticmethod
-    def format_table(matrix):
-        "Format matrix as a table"
-        output =""
-        for row in matrix:
-            first_col = True
-            for col in row:
-                if first_col:
-                    output += "| "
-                    first_col=False
-                if not col is None:
-                    output += "%f"% float(col)
-                else:
-                    output +="%5s"%"None"
-                output +=" | "
-            output += "\n"
-        return output
-
-# singleton helpers
-pretty_printers = PrettyPrinters()
 
 class SlackForm:
     "Represents simplex in slack form ..."
@@ -272,7 +272,7 @@ class SlackForm:
         if debug:
             print("\nA:\n%s" % self.A)
             print("Input Equations:")
-            print(pretty_printers.format_table(A))
+            print(Matrix(matrix=A))
 
         if debug:
             print("orig-b:%s"% b)
@@ -373,7 +373,7 @@ class SlackForm:
         #
         if debug:
             print("(Eq:%d) => :%s" % (entering_idx,entering_constraint))
-            print("\nA:\n%s" % pretty_printers.format_table(self.A))
+            print("\nA:\n%s" % Matrix(matrix=self.A))
         #
         for idx in self.dependent:
             if idx == leaving_idx: continue
@@ -421,7 +421,7 @@ class SlackForm:
         if debug:
             print("b: %s" % self.b)
             print("c: %s" %  self.c)
-            print("\nA:\n %s\n" % pretty_printers.format_table(self.A))
+            print("\nA:\n %s\n" % Matrix(matrix=self.A))
 
         for idx in self.dependent:
             constant = self.b[idx]
@@ -453,7 +453,7 @@ class SlackForm:
 
 
     def __repr__(self):
-        return "A:\n%s\nb:%s" %(pretty_printers.format_table(self.A),self.b)
+        return "A:\n%s\nb:%s" %(Matrix(matrix=self.A),self.b)
 
     def solve(self):
         if debug:
@@ -467,7 +467,7 @@ class SlackForm:
 
             if debug:
                 print("pivot: %d" % cnt)
-                print("%s" % pretty_printers.format_table(self.A))
+                print("%s" % Matrix(matrix=self.A))
                 print(" Objective > %s: %s " % (self.c,self.v))
 
             entering_idx = self.pick_entering_idx()
@@ -482,7 +482,7 @@ class SlackForm:
             self.pivot(entering_idx , leaving_idx)
 
         if debug:
-            print("\nA:\n%s\n" % pretty_printers.format_table(self.A))
+            print("\nA:\n%s\n" % Matrix(matrix=self.A))
             print("\nb:%s\n"   % self.b)
             print("objective after pivots: %s" % self.c)
 
@@ -694,10 +694,9 @@ class Simplex:
 
     @staticmethod
     def parse_file(fname):
-        f = open(fname,"r")
-        ret = Simplex.parse_stream(f)
-        f.close()
-        return ret
+        with open(fname,"r") as stream:
+            return Simplex.parse_stream(stream)
+
 
 class SimplexTest(unittest.TestCase):
 
