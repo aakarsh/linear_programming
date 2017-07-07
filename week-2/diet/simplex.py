@@ -14,11 +14,11 @@ class FPHelper:
     @staticmethod
     def ispositive(x):
         return x and (not FPHelper.iszero(x)) and (x > 0.0)
-    
+
     @staticmethod
     def isclose(a, b, rel_tol=global_tolerance, abs_tol=global_tolerance):
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
-    
+
     @staticmethod
     def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
         return FPHelper.isclose(a,0.0,rel_tol,abs_tol)
@@ -32,16 +32,22 @@ class InfeasibleError(Exception):
     pass
 
 class Matrix:
+    
     "Simplistic matrix class."
-    
-    def __init__(self,nrows,ncols,initial=None):
-        self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows)]
 
-    def __getitem__(self,idx):
-        return self.matrix[idx]
+    def __init__(self,nrows,ncols,initial=None):
+        self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows) ]
+
+    def __getitem__(self,idx):  return self.matrix[idx]
+    def __delitem__(self,idx):  del self.matrix[idx]
+    def __iter__(self):         return iter(self.matrix)
+    def __len__(self):          return len(self.matrix)
     
-    def __delitem__(self,idx):
-        del self.matrix[idx]
+    def pop(self):              self.matrix.pop()        
+    def pop_row(self):          self.pop()
+    
+    def pop_column(matrix):
+        for row in matrix: row.pop()
         
     def __setitem__(self,idx,value):
         lv,lm = len(value),len(self.matrix[idx])
@@ -49,24 +55,9 @@ class Matrix:
             raise ValueError("%d does not match row length : %d" % (lv,lm))
         self.matrix[idx] = value
 
-    def __iter__(self):
-        return iter(self.matrix)
-
-    def __len__(self):
-        return len(self.matrix)
-
     def __repr__(self):
         return pretty_printers.format_table(self.matrix)
 
-    def pop(self):
-        self.matrix.pop()
-
-    def pop_column(matrix):
-        for row in matrix: row.pop()
-
-    def pop_row(matrix):
-        matrix.pop()
-        
     def set_value_all_rows(matrix,row_idxs, value):
         for row in row_idxs:
             matrix[row] = [value] * len(matrix[row])
@@ -80,54 +71,61 @@ class Matrix:
             for col in col_idxs:
                 matrix[row][col] = value
 
-
     def set_value(self,value,**kwargs):
         if "columns" in kwargs:
             self.set_value_all_columns(kwargs["columns"],value)
         if "rows" in kwargs:
             self.set_value_all_rows(kwargs["rows"],value)
 
-
-    def copy(m1,m2):
+    def copy(m1,m2,column_offset = 0,row_offset = 0):
         for r in range(len(m2)):
             for c in range(len(m2[r])):
-                m1[r][c] = m2[r][c]
+                m1[r+row_offset][c+column_offset] = m2[r][c]
 
-
-
-class ListHelper:
-
-    @staticmethod
+class list_wrapper():    
+    "Wrapper class around built in list providing some method"
+    
+    def __init__(self,*args):
+        if len(args) == 1 and isinstance(args[0],list):
+            self.ls = args[0]
+        else:
+            self.ls = args
+            
+    def __repr__(self): return self.ls.__repr__()
+    def __getitem__(self,idx):  return self.ls[idx]
+    def __delitem__(self,idx):  del self.ls[idx]
+    def __setitem__(self,idx,value):
+        self.ls[idx] = value
+        
+    def __iter__(self):         return iter(self.ls)
+    def __len__(self):          return len(self.ls)
+    
+        
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
-
-    @staticmethod
+    
     def find_first_idx(l, in_set = None, by = lambda x: True):
         "Find first element of list set in by predicate "
         if not in_set:
             in_set = set(range(len(l)))
-        for (idx, value) in ListHelper.zip_set(l,in_set,by):
+        for (idx, value) in l.zip_set(in_set,by):
             return idx
         return None
-
-    @staticmethod
+    
     def contains(ls , predicate = lambda x: x):
         for value in ls:
             if predicate(value): return True
         return False
-    
-    @staticmethod
+
     def find_first(l, in_set = None, by = lambda x: True):
         "Find first element of list set in by predicate "
-        for (idx, value) in ListHelper.zip_set(l,in_set,by):
+        for (idx, value) in l.zip_set(in_set,by):
             return value
         return None
-
-    @staticmethod
+    
     def set_values(l, value,idxs ):
         for idx in idxs: l[idx] = value
 
-    @staticmethod
     def min_index(l,max=float('inf')):
         "Return a pair of (value,index) of elment with minimum index"
         zl = zip(l,range(len(l)))
@@ -155,7 +153,6 @@ class PrettyPrinters:
         return output
 
 # singleton helpers
-list_helper  =  ListHelper()
 pretty_printers = PrettyPrinters()
 
 class SlackForm:
@@ -196,7 +193,7 @@ class SlackForm:
 
             # TODO maybe not correct return the entering constraints
             if not variable_coefficient or FPHelper.iszero(variable_coefficient):
-                retval = constraint 
+                retval = constraint
                 if debug: print("subs => : %s " % (retval))
                 return retval
 
@@ -221,7 +218,7 @@ class SlackForm:
                     return_coefficients[var_idx] = variable_coefficient * entering_coeff
 
             retval = SlackForm.Constraint(return_constant,return_coefficients)
-            
+
             if debug: print("subs => : %s " % (retval))
 
             return retval
@@ -279,7 +276,7 @@ class SlackForm:
 
         if debug:
             print("orig-b:%s"% b)
-            
+
         self.b = list(map(float,b))
 
         # Fill rest of it with None
@@ -306,17 +303,16 @@ class SlackForm:
             print("dependent : %s, independent : %s" %
                   (self.independent,self.dependent))
 
-        leaving_coeff,leaving_idx = ListHelper.min_index(self.b)
+        leaving_coeff,leaving_idx = list_wrapper(self.b).min_index()
 
         if debug:
             print("leaving_coeff:%d leaving_idx: %d"
                   % (leaving_coeff,leaving_idx))
 
-
     def to_objective_constraint(self):
         "Particular equation-id from simplex wrapped  equation"
         return SlackForm.Constraint(self.v,self.c)
-        
+
     def to_constraint(self,equation_idx):
         "Particular equation-id from simplex wrapped  equation"
         return SlackForm.Constraint(self.b[equation_idx],self.A[equation_idx])
@@ -332,7 +328,7 @@ class SlackForm:
             print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
         self.v,self.c = new_obj.constant,new_obj.coefficients
         return new_obj
-        
+
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
         "Substititue enterint constraint into equation "
         new_eq  = self.to_constraint(equation_idx).substitute_constraint(entering_idx,entering_constraint)
@@ -368,21 +364,20 @@ class SlackForm:
 
         return SlackForm.Constraint(entering_constant,entering_equation)
 
-    
+
     def pivot(self,entering_idx,leaving_idx):
         "Pivot on the entering and leaving ids"
         #
         entering_constraint = self.make_pivot_constraint(leaving_idx,entering_idx)
         self.store(entering_idx,entering_constraint)
-        # 
-        if debug:                
+        #
+        if debug:
             print("(Eq:%d) => :%s" % (entering_idx,entering_constraint))
             print("\nA:\n%s" % pretty_printers.format_table(self.A))
         #
         for idx in self.dependent:
-            if idx == leaving_idx: continue            
+            if idx == leaving_idx: continue
             self.substitute_equation(idx,entering_constraint,entering_idx)
-            
 
         self.substitute_objective(entering_constraint,entering_idx)
 
@@ -391,37 +386,34 @@ class SlackForm:
 
         if debug:
             print("dependent: %s   -  %d + %d " % (self.dependent,leaving_idx,entering_idx))
-            
+
         self.dependent.remove(leaving_idx)
         self.dependent.add(entering_idx)
-        
+
         if debug:
             print("dependent=> %s" % self.dependent)
-                  
+
         if debug:
             print("independent: %s -  %d + %d" % (self.independent,entering_idx,leaving_idx))
-                  
+
         self.independent.remove(entering_idx)
         self.independent.add(leaving_idx)
-                  
+
         if debug:
             print("independent: %s" %(self.independent))
-                  
-    def objective_has_positive_coefficients(self):
-        contains = ListHelper.contains
-        ispositive = FPHelper.ispositive
-        return contains(self.c,predicate = ispositive)
 
+    def objective_has_positive_coefficients(self):
+        ispositive = FPHelper.ispositive
+        return list_wrapper(self.c).contains(predicate = ispositive)
 
     def pick_entering_idx(self):
-        find_first_idx  = ListHelper.find_first_idx
-        return find_first_idx(self.c,in_set = self.independent,
-                                     by     = FPHelper.ispositive)
+        return list_wrapper(self.c).find_first_idx(in_set = self.independent,
+                                                   by     = FPHelper.ispositive)
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
             print("pick_leaving_idx: dependent:%s entering:%d" %(self.dependent,entering_idx))
-            
+
         slack = [None] * len(self.b)
 
         # TODO: Seeing non-None  values in b where it is not a depenedent
@@ -430,13 +422,13 @@ class SlackForm:
             print("b: %s" % self.b)
             print("c: %s" %  self.c)
             print("\nA:\n %s\n" % pretty_printers.format_table(self.A))
-        
+
         for idx in self.dependent:
             constant = self.b[idx]
             coeff    = -1 * self.A[idx][entering_idx]
             if debug:
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
-                
+
             if FPHelper.ispositive(coeff):
                 slack[idx]  = (constant/coeff)
                 if debug:
@@ -444,20 +436,20 @@ class SlackForm:
                     if slack[idx]:
                         print("%2.2f",slack[idx])
                     else: print()
-                    
+
         if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
         if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
-        
-        min_slack,slack_idx = ListHelper.min_index(slack)
+
+        min_slack,slack_idx = list_wrapper(slack).min_index()
         if debug:
             if min_slack:
                 print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
             else:
                 print("min_slack is None slacks: %s",slack )
-                
+
             print("leave: %d" % slack_idx)
 
-        return slack_idx if min_slack else None 
+        return slack_idx if min_slack else None
 
 
     def __repr__(self):
@@ -472,12 +464,12 @@ class SlackForm:
             if debug:
                 print(self)
             cnt+=1
-            
+
             if debug:
                 print("pivot: %d" % cnt)
                 print("%s" % pretty_printers.format_table(self.A))
                 print(" Objective > %s: %s " % (self.c,self.v))
-            
+
             entering_idx = self.pick_entering_idx()
             leaving_idx  = self.pick_leaving_idx(entering_idx)
 
@@ -537,7 +529,7 @@ class Simplex:
             return "Infinity"
         else:
             return "Unrecognized Answer : %s" % anst
-    
+
 
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
@@ -548,7 +540,7 @@ class Simplex:
 
         if debug:
             print("%d => (dependent) => %d " % (nvars,min_idx))
-        
+
         aux_sf.pivot( self.n + self.m , min_idx)
 
         (opt,ansx) = aux_sf.solve()
@@ -567,13 +559,13 @@ class Simplex:
             constant, equation = aux_sf.b[idx],aux_sf.A[idx]
             entering_constraint = SlackForm.Constraint(constant,equation)
             new_obj = SlackForm.Constraint.substitute_constraint(new_obj,idx,entering_constraint)
-            
+
         if debug:
             print("sub-obj: %s" % new_obj)
-        if debug: print("END:subsitite-auxiliary-form-objective ")            
+        if debug: print("END:subsitite-auxiliary-form-objective ")
 
-        ListHelper.set_values(new_obj.coefficients, None, aux_sf.dependent)
-        ListHelper.set_values(aux_sf.b, None, aux_sf.independent )
+        list_wrapper(new_obj.coefficients).set_values( None, aux_sf.dependent)
+        list_wrapper(aux_sf.b).set_values( None, aux_sf.independent )
 
         # set all unused rows  and columns to None
         aux_sf.A.set_value(None,rows= aux_sf.independent,columns= aux_sf.dependent)
@@ -582,7 +574,7 @@ class Simplex:
         # x_nvars
         if debug:
             print("Objective: %s" % new_obj)
-            print("A: \n%s" % pretty_printers.format_table(aux_sf.A))
+            print("A: \n%s" % aux_sf.A)
             print("b: \n%s" % aux_sf.b)
             print("depenedents:   \n%s"  % aux_sf.dependent)
             print("indepenedents: \n%s"  % aux_sf.independent)
@@ -616,8 +608,8 @@ class Simplex:
         try:
             if debug:
                 print("Simplex:b %s"%self.b)
-            min_constant, idx = ListHelper.min_index(self.b);
-            
+            min_constant, idx = list_wrapper(self.b).min_index();
+
             if  min_constant < 0: # 0-comparison
                 if debug:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
@@ -679,7 +671,7 @@ class Simplex:
 
         # copy An
         aux_A.copy(self.A)
-        
+
         # set nvars column to -1
         aux_A.set_column_value(self.m,-1)
         return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
@@ -706,7 +698,6 @@ class Simplex:
         ret = Simplex.parse_stream(f)
         f.close()
         return ret
-
 
 class SimplexTest(unittest.TestCase):
 
@@ -737,7 +728,7 @@ class SimplexTest(unittest.TestCase):
         s = Simplex(A,b,c,n,m)
         opt,ass = s.solve()
         self.assertEqual(s.optimum,28)
-    
+
     def test_infeasible_start(self):
         A = [[ 2 ,-1],
              [ 1 ,-5]]
@@ -748,20 +739,20 @@ class SimplexTest(unittest.TestCase):
         s = Simplex(A,b,c,n,m)
         opt,ass = s.solve()
         self.assertEqual(s.optimum,2.0)
-    
+
     def test_read_01(self):
         simplex = Simplex.parse_file("./tests/bounded/01")
         self.assertIsNotNone(simplex)
         self.assertEqual(3,simplex.n)
         self.assertEqual(2,simplex.m)
         self.assertEqual(simplex.n,len(simplex.A))
-    
+
     def test_read_04(self):
         simplex = Simplex.parse_file("./tests/bounded/04")
         anst,ansx = simplex.solve()
         if debug:
             print("%s"%ansx)
-    
+
     def test_solve_01(self):
         simplex = Simplex.parse_file("./tests/bounded/01")
         anst,ansx = simplex.solve()
@@ -777,13 +768,12 @@ class SimplexTest(unittest.TestCase):
             self.assertEqual(anst,expected)
         except AssertionError:
             raise AssertionError("Checking %s expected %s got %s " % (fname, Simplex.answer_type_str(expected), Simplex.answer_type_str(anst)))
-        
+
     def test_unbounded_files(self):
         pat = "./tests/inf/[0-9]*"
         not_answer_p = lambda fname: not fname.endswith(".a")
         for fname in filter(not_answer_p,glob.iglob(pat)):
             self.assertAnswerType(1,fname)
-
 
     def test_nosolution_files(self):
         pat = "./tests/no/[0-9]*"
@@ -798,7 +788,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "--debug") :
         debug = True
-        
+
     simplex = Simplex.parse_stream(sys.stdin)
     anst, ansx = simplex.solve()
     print(Simplex.answer_type_str(anst))
