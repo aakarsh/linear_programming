@@ -50,26 +50,26 @@ class SimplexTest(unittest.TestCase):
         self.assertEqual(s.optimum,2.0)
 
     def test_read_01(self):
-        s = simplex.Simplex.parse_file("./tests/bounded/01")
+        s = simplex.Simplex.parse(file="./tests/bounded/01")
         self.assertIsNotNone(s)
         self.assertEqual(3,s.n)
         self.assertEqual(2,s.m)
         self.assertEqual(s.n,len(s.A))
 
     def test_read_04(self):
-        s = simplex.Simplex.parse_file("./tests/bounded/04")
+        s = simplex.Simplex.parse(file="./tests/bounded/04")
         anst,ansx = s.solve()
         if debug: print("%s"%ansx)
 
     def test_solve_01(self):
-        s = simplex.Simplex.parse_file("./tests/bounded/01")
+        s = simplex.Simplex.parse(file="./tests/bounded/01")
         anst,ansx = s.solve()
         if debug: print("anst:%s ansx:%s"%(anst,ansx))
         self.assertIsNotNone(anst)
         self.assertIsNotNone(ansx)
 
     def assertAnswerType(self,expected,fname):
-        s = simplex.Simplex.parse_file(fname)
+        s = simplex.Simplex.parse(file=fname)
         anst,_=s.solve()
         try:
             self.assertEqual(anst,expected)
@@ -90,7 +90,6 @@ class SimplexTest(unittest.TestCase):
         not_answer_p = lambda fname: not fname.endswith(".a")
         for fname in filter(not_answer_p,glob.iglob(pat)):
             self.assertAnswerType(-1,fname)
-
             
 def run_tests():
     unittest.main(module='test_simplex',exit=False)
