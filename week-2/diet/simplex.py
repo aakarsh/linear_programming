@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.4
 
 import glob
 import os
@@ -9,7 +9,7 @@ import functools
 import argparse
 
 debug = False
-global_tolerance = 1e-09
+global_tolerance = 1e-06
 
 class FPHelper:
 
@@ -287,12 +287,10 @@ class SlackForm:
             print("leaving_coeff:%d leaving_idx: %d"
                   % (leaving_coeff,leaving_idx))
 
-    def to_objective_constraint(self):
+    def to_constraint(self,equation_idx = None,type='constraint'):
         "Particular equation-id from simplex wrapped  equation"
-        return SlackForm.Constraint(self.v,self.c)
-
-    def to_constraint(self,equation_idx):
-        "Particular equation-id from simplex wrapped  equation"
+        if  equation_idx is None: # return objective constant
+            return SlackForm.Constraint(self.v,self.c)
         return SlackForm.Constraint(self.b[equation_idx],self.A[equation_idx])
 
     def store(self,idx,new_eq):
@@ -300,16 +298,14 @@ class SlackForm:
         self.b[idx],self.A[idx] = new_eq.get_constant(), new_eq.get_coefficients()
 
     def substitute_objective(self,entering_constraint,entering_idx):
-        obj_cons = self.to_objective_constraint()
-        new_obj = obj_cons.substitute(entering_idx,entering_constraint)
+        new_obj = self.to_constraint(type='objective').substitute(entering_idx,entering_constraint)
         if debug:
             print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
         self.v,self.c = new_obj.get_constant(),new_obj.get_coefficients()
-        return new_obj
 
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
         "Substititue enterint constraint into equation "
-        new_eq  = self.to_constraint(equation_idx).substitute(entering_idx,entering_constraint)
+        new_eq  = self.to_constraint(equation_idx).substitute(entering_idx,entering_constraint)        
         self.store(equation_idx,new_eq)
 
     def make_pivot_constraint(self,leaving_idx, entering_idx):
@@ -358,10 +354,9 @@ class SlackForm:
             self.substitute_equation(idx,entering_constraint,entering_idx)
 
         self.substitute_objective(entering_constraint,entering_idx)
-
+        #
         # move leaving_idx  from dependent   to independent set
-        # move entering_idx from independent to dependent set
-
+        # move entering_idx from independent to dependent set        
         if debug:
             print("dependent: %s   -  %d + %d " % (self.dependent,leaving_idx,entering_idx))
 
@@ -674,17 +669,62 @@ if __name__ == "__main__":
                                      description='Run simplex on matrix from standard input.')
     parser.add_argument("-d","--debug",action="count",help="enable debug level log")
     parser.add_argument("-t","--tolerance",help="floating point tolerance to tolerate in an intolerable world")
+    parser.add_argument("-s","--scipy",action='count',help="Use sci-py instead to compare answers")
 
     args = parser.parse_args()
 
+    
+    
     if args.debug:
         debug = True
     if args.tolerance:
         global_tolerance = float(args.tolerance)
 
     simplex = Simplex.parse()
+    
     anst, ansx = simplex.solve()
 
+    import sys
+    import numpy as np
+    from scipy.optimize import linprog
+    from scipy import optimize
+
+    
     print(Simplex.answer_type_str(anst))
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
+        import sys
+        import numpy as np
+        from scipy.optimize import linprog
+        from scipy import optimize
+        
+        linprog_res = linprog([-x for x in simplex.c], A_ub = simplex.A, b_ub = simplex.b, options = { 'tol': global_tolerance })
+        max_myprog = np.dot(simplex.c, ansx)
+        print('max_myprog =', max_myprog)
+        print ("linprog_res.status : %d " % linprog_res.status)
+        assert (linprog_res.status == 0)
+        max_ref = np.dot(simplex.c, linprog_res.x)
+        print('max_ref =', max_ref)
+        if args.scipy: print(" %s " % linprog_res)        
+        assert (abs(max_myprog - max_ref) <= 1e-3)
+        
+
+        
+        r = 0
+
+        for row in simplex.A:
+            dot = [ row[i] * ansx[i] for i in range(len(row))]
+            sum = 0
+            for x in dot:
+                sum += x
+                
+            assert(sum <= simplex.b[r] + 1e-3)
+            r+=1
+
+        
+
+        
+
+        
+
+

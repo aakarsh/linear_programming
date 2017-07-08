@@ -1,6 +1,8 @@
 #!/usr/bin/env python3.4
 #
 # Author :  https://gist.github.com/dtrebbien/396973cccf906d3b9afe949bad8c0613
+#
+#
 from __future__ import print_function
 import sys
 import numpy as np
@@ -17,6 +19,7 @@ def print_lp(n,m,A,b,c,file=sys.stdout):
   print(file=file)
   
 for _ in range(100000):
+  
   n, m = np.random.randint(1, 8, size = (2,))
   A    = np.random.randint(-100, 100, size = (n, m,))
   b    = np.random.randint(-1000000, 1000000, size = (n,))
