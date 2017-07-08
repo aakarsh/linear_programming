@@ -15,7 +15,7 @@ class FPHelper:
 
     def __init__(self,x):
         self.x = x
-        
+
     @staticmethod
     def ispositive(x):
         return x and (not FPHelper.iszero(x)) and (x > 0.0)
@@ -26,7 +26,7 @@ class FPHelper:
         rel_tol = opt(rel_tol,global_tolerance)
         abs_tol = opt(abs_tol,global_tolerance)
         return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
-    
+
     @staticmethod
     def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
         return FPHelper.isclose(a,0.0,rel_tol,abs_tol)
@@ -164,37 +164,30 @@ class SlackForm:
         def __init__(self,constant=None,coefficients=None,**kwargs):
             if "row" in kwargs:
                 self.row = kwargs["row"]
-                self.constant = self.row[0]
-                self.coefficients = self.row[1:]
             else:
-                self.constant,self.coefficients = constant,coefficients
-                self.row = [self.constant].extend(self.coefficients)
-
-        def store(self,idx,slackform):
-            "Store constraint back into slack form"
-            slackform.b[idx],slackform.A[idx] = self.constant,self.coefficients
-            slackform.b[idx],slackform.A[idx] = self.row[0],self.row[1:]
+                self.row = [constant]
+                self.row.extend(coefficients)
 
         def __repr__(self):
             return " (%s) %s" % (self.row[0],self.row[1:])
-        
-        def get_row(self):
-            l= [self.constant]
-            l.extend(self.coefficients)
-            return l
-        
+
+        def get_row(self):             return self.row
+        def get_coefficients(self):    return self.row[1:] # O(n)
+        def get_constant(self):        return self.row[0]
+        def get_coefficient(self,idx): return self.row[idx+1]
+
         def sexp(self,other,factor):
             "Perform linear transform on two vectors self and other of a+(factor*b) "
-            opt    = lambda v :  v if v else 0            
-            inc    = lambda a,c : opt(a) + factor*opt(c)            
+            opt    = lambda v :  v if v else 0
+            inc    = lambda a,c : opt(a) + factor*opt(c)
             return  [inc(a,c)  for a,c in zip(self.get_row(),other.get_row())]
-            
+
         def substitute(self,entering_idx,other):
             if debug:
                 print("subs: %-20s @ [%3d] => %-20s " % (other, entering_idx, self))
 
-            variable_coefficient = self.coefficients[entering_idx]
-            
+            variable_coefficient = self.get_coefficient(entering_idx)
+
             # TODO maybe not correct return the entering constraints
             if not variable_coefficient or FPHelper.iszero(variable_coefficient):
                 if debug: print("subs => : %s " % (self))
@@ -203,9 +196,8 @@ class SlackForm:
             # treat constant and coefficients as single row
             return_row = self.sexp(other,variable_coefficient)
             return_row[entering_idx+1] = None
-
             retval = SlackForm.Constraint(row = return_row)
-            
+
             if debug: print("subs => : %s " % (retval))
 
             return retval
@@ -223,7 +215,6 @@ class SlackForm:
             self.n = kwargs["n"]
         if "m" in kwargs:
              self.m = kwargs["m"]
-
 
     def __init__(self,**kwargs):
         # expand
@@ -306,14 +297,14 @@ class SlackForm:
 
     def store(self,idx,new_eq):
         "Store constraint back into slack form"
-        self.b[idx],self.A[idx] = new_eq.constant, new_eq.coefficients
+        self.b[idx],self.A[idx] = new_eq.get_constant(), new_eq.get_coefficients()
 
     def substitute_objective(self,entering_constraint,entering_idx):
         obj_cons = self.to_objective_constraint()
         new_obj = obj_cons.substitute(entering_idx,entering_constraint)
         if debug:
             print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
-        self.v,self.c = new_obj.constant,new_obj.coefficients
+        self.v,self.c = new_obj.get_constant(),new_obj.get_coefficients()
         return new_obj
 
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
@@ -427,7 +418,7 @@ class SlackForm:
         if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
 
         min_slack,slack_idx = list_wrapper(slack).min_index()
-        
+
         if debug:
             if min_slack:
                 print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
@@ -546,7 +537,7 @@ class Simplex:
             print("sub-obj: %s" % new_obj)
         if debug: print("END:subsitite-auxiliary-form-objective ")
 
-        list_wrapper(new_obj.coefficients).set_values( None, aux_sf.dependent)
+        list_wrapper(new_obj.get_coefficients()).set_values( None, aux_sf.dependent)
         list_wrapper(aux_sf.b).set_values( None, aux_sf.independent )
 
         # set all unused rows  and columns to None
@@ -569,8 +560,8 @@ class Simplex:
         aux_sf.b.pop()
 
         # replace the new objective
-        aux_sf.replace(c = new_obj.coefficients,
-                       v = new_obj.constant)
+        aux_sf.replace(c = new_obj.get_coefficients(),
+                       v = new_obj.get_constant())
 
         # remove one independent variable
         aux_sf.independent.remove(nvars)
@@ -678,23 +669,22 @@ class Simplex:
             return Simplex(A,b,c,n,m)
 
 if __name__ == "__main__":
-    
+
     parser = argparse.ArgumentParser(prog="simplex.py",
-                                     description='Run simplex on matrix from standard input.')    
+                                     description='Run simplex on matrix from standard input.')
     parser.add_argument("-d","--debug",action="count",help="enable debug level log")
     parser.add_argument("-t","--tolerance",help="floating point tolerance to tolerate in an intolerable world")
-    
+
     args = parser.parse_args()
-    
+
     if args.debug:
-        debug = True    
+        debug = True
     if args.tolerance:
         global_tolerance = float(args.tolerance)
-        
+
     simplex = Simplex.parse()
     anst, ansx = simplex.solve()
-    
-    print(Simplex.answer_type_str(anst))    
+
+    print(Simplex.answer_type_str(anst))
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-
