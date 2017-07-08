@@ -86,7 +86,7 @@ class Matrix:
                     if not col is None:
                         output += "%f"% float(col)
                     else:
-                        output +="%5s"%"None"
+                        output +="%15s"%"None"
                     output +=" | "
                 output += "\n"
             return output
@@ -592,10 +592,13 @@ class Simplex:
                     if debug:
                         print("OPTIMIMUM VALUE: %f(%s)" %(opt,debug))
                         print("ASSIGNMENT: %s " % self.assignment)
+                    self.anst = 0
                     return (0,self.assignment)
                 except UnboundedError as err:
+                    self.anst = 1
                     return(1,None)
                 except InfeasibleError as err:
+                    self.anst = -1
                     return (-1, None)
 
             # basic solution is already feasible
@@ -644,6 +647,40 @@ class Simplex:
         aux_A.set_column_value(self.m,-1)
         return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
 
+
+    def verify_bounds(self,tolerance=1e-3):
+        r = 0
+        for row in self.A:
+            dot = [ row[i] * ansx[i] for i in range(len(row))]
+            sum = 0
+            for x in dot:
+                sum += x                
+            assert(sum <= self.b[r] + 1e-3)
+            r+=1
+
+    def solve_scipy(self,tolerance=global_tolerance):
+        import sys
+        import numpy as np
+        from scipy.optimize import linprog        
+        linprog_res = linprog([-x for x in simplex.c], A_ub = simplex.A, b_ub = simplex.b, options = { 'tol': tolerance })
+        return linprog_res
+                    
+    def verify_scipy(self,tolerance=1e-3):
+
+        linprog_res = self.solve_scipy()
+        if debug:
+            print('max_myprog =', self.optimum)
+            print ("linprog_res.status : %d " % linprog_res.status)
+        if self.anst == 0:
+            assert (linprog_res.status == 0)
+            
+        max_ref = np.dot(simplex.c, linprog_res.x)
+        if debug:
+            print('max_ref =', max_ref)
+            print(" %s " % linprog_res)        
+
+        assert (abs(max_myprog - max_ref) <= tolerance)
+        
     def __repr__(self):
         return "A:\n%s\nb:\n%s\nc:\n%s\n" % (self.A,self.b,self.c)
 
@@ -670,6 +707,7 @@ if __name__ == "__main__":
     parser.add_argument("-d","--debug",action="count",help="enable debug level log")
     parser.add_argument("-t","--tolerance",help="floating point tolerance to tolerate in an intolerable world")
     parser.add_argument("-s","--scipy",action='count',help="Use sci-py instead to compare answers")
+    parser.add_argument("-v","--verify",action='count',help="Verify sci-py instead to compare answers")
 
     args = parser.parse_args()
 
@@ -684,42 +722,16 @@ if __name__ == "__main__":
     
     anst, ansx = simplex.solve()
 
-    import sys
-    import numpy as np
-    from scipy.optimize import linprog
-    from scipy import optimize
-
-    
     print(Simplex.answer_type_str(anst))
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-        import sys
-        import numpy as np
-        from scipy.optimize import linprog
-        from scipy import optimize
         
-        linprog_res = linprog([-x for x in simplex.c], A_ub = simplex.A, b_ub = simplex.b, options = { 'tol': global_tolerance })
-        max_myprog = np.dot(simplex.c, ansx)
-        print('max_myprog =', max_myprog)
-        print ("linprog_res.status : %d " % linprog_res.status)
-        assert (linprog_res.status == 0)
-        max_ref = np.dot(simplex.c, linprog_res.x)
-        print('max_ref =', max_ref)
-        if args.scipy: print(" %s " % linprog_res)        
-        assert (abs(max_myprog - max_ref) <= 1e-3)
+        if args.verify:
+            simplex.verify_scipy(tolerance=1e-4)
+        simplex.verify_bounds(tolerance=1e-4)
         
-
-        
-        r = 0
-
-        for row in simplex.A:
-            dot = [ row[i] * ansx[i] for i in range(len(row))]
-            sum = 0
-            for x in dot:
-                sum += x
-                
-            assert(sum <= simplex.b[r] + 1e-3)
-            r+=1
+    if args.scipy:
+        print(simplex.solve_scipy())
 
         
 
