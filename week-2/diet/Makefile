@@ -7,3 +7,8 @@ diet: diet.cc
 
 diet_d: diet.cc
 	g++  $(FLAGS) diet.cc -DDEBUG   -lm -o ./bin/diet_d
+
+test: simplex.py stress.py
+	cp simplex.py ./sandbox/
+	cp stress.py ./sandbox/
+	cd ./sandbox/ && ./stress.py

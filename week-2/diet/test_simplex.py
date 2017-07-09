@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3.4
 
 import glob
 import os
@@ -67,29 +67,47 @@ class SimplexTest(unittest.TestCase):
         if debug: print("anst:%s ansx:%s"%(anst,ansx))
         self.assertIsNotNone(anst)
         self.assertIsNotNone(ansx)
-
-    def assertAnswerType(self,expected,fname):
+        
+    def assertValidBounded(self,fname,tolerance=1e-4):
         s = simplex.Simplex.parse(file=fname)
-        anst,_=s.solve()
+        anst,ansx=s.solve()
+        assert anst == 0
+        self.assertTrue(s.verify_bounds(ansx,tolerance))
+        self.assertTrue(s.verify_scipy(tolerance))
+
+    def assertAnswerType(self,expected,fname,predicates=[]):
         try:
             self.assertEqual(anst,expected)
-        except AssertionError:
-            raise AssertionError("Checking %s expected %s got %s " \
-                                 % (fname,
-                                    simplex.Simplex.answer_type_str(expected),
-                                    simplex.Simplex.answer_type_str(anst)))
+            for p in predicates:
+                self.assertTrue(p(s,anst,ansx))
+        except AssertionError as err:
+            print(err)
 
-    def test_unbounded_files(self):
-        pat = "./tests/inf/[0-9]*"
-        not_answer_p = lambda fname: not fname.endswith(".a")
-        for fname in filter(not_answer_p,glob.iglob(pat)):
-            self.assertAnswerType(1,fname)
+            if anst != expected:
+                raise AssertionError("Checking %s expected %s got %s " \
+                                     % (fname,
+                                        simplex.Simplex.answer_type_str(expected),
+                                        simplex.Simplex.answer_type_str(anst)))
+            raise err
 
-    def test_nosolution_files(self):
-        pat = "./tests/no/[0-9]*"
-        not_answer_p = lambda fname: not fname.endswith(".a")
-        for fname in filter(not_answer_p,glob.iglob(pat)):
-            self.assertAnswerType(-1,fname)
+    # def test_unbounded_files(self):
+    #     pat = "./tests/inf/[0-9]*"
+    #     not_answer_p = lambda fname: not fname.endswith(".a")
+    #     for fname in filter(not_answer_p,glob.iglob(pat)):
+    #         self.assertAnswerType(1,fname)
+    #
+    # def test_nosolution_files(self):
+    #     pat = "./tests/no/[0-9]*"
+    #     not_answer_p = lambda fname: not fname.endswith(".a")
+    #     for fname in filter(not_answer_p,glob.iglob(pat)):
+    #         self.assertAnswerType(-1,fname)
+
+    def test_tolerance_failure(self):
+        fname = "./fail/11"
+        simplex.debug=True            
+        self.assertValidBounded(fname)
+
+
             
 def run_tests():
     unittest.main(module='test_simplex',exit=False)
