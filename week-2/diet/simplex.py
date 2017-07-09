@@ -7,28 +7,31 @@ import unittest
 import itertools
 import functools
 import argparse
-
+import decimal
+from decimal import Decimal
 from itertools import chain
+
 
 debug = False
 global_tolerance = 1e-09
+decimal.getcontext().prec =100
 
-class FPHelper:
+class fp_ops:
     
-    def __init__(self,x):
-        self.x = x
+    def __init__(self,rel_tol=global_tolerance, abs_tol=global_tolerance):
+        self.abs_tol = abs_tol
+        self.rel_tol = rel_tol
+        self.tolerance = global_tolerance
 
-    @staticmethod
-    def ispositive(x):
-        return x and (not FPHelper.iszero(x)) and (x > -global_tolerance)
+    def ispositive(self,x):
+        return x and (not self.iszero(x)) and x - 0.0 > global_tolerance
 
-    @staticmethod
-    def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
-        return FPHelper.iseq(a,0.0,rel_tol,abs_tol)
+    def iszero(self,a):
+        return fp_ops(self.rel_tol,self.abs_tol).iseq(a,0.0)
 
-    @staticmethod
-    def iseq(a, b, rel_tol=global_tolerance, abs_tol=global_tolerance):
-        return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+    def iseq(self,a, b):
+        #return abs(a-b) <= max(self.rel_tol * max(abs(a), abs(b)), self.abs_tol)
+        return abs(a-b) <= global_tolerance
 
 
 
@@ -154,6 +157,7 @@ class list_wrapper():
     def min_index(l,max=float('inf')):
         "Return a pair of (value,index) of elment with minimum index"
         zl = zip(l,range(len(l)))
+        # hiding a comparison
         return min(zl, key = lambda z: z[0] if z[0] else max)
 
 class SlackForm:
@@ -162,7 +166,8 @@ class SlackForm:
     class Constraint:
         "Helper class to deal with constraints..."
 
-        def __init__(self,constant=None,coefficients=None,**kwargs):
+        def __init__(self,constant=None,coefficients=None,fp_op=None,**kwargs):
+            self.fp_op= fp_op
             if "row" in kwargs:
                 self.row = kwargs["row"]
             else:
@@ -181,7 +186,12 @@ class SlackForm:
             "Perform linear transform on two vectors self and other of a+(factor*b) "
             opt    = lambda v :  v if v else 0
             inc    = lambda a,c : opt(a) + factor*opt(c)
-            return  [inc(a,c)  for a,c in zip(self.get_row(),other.get_row())]
+            
+            retval =  [inc(a,c)  for a,c in zip(self.get_row(),other.get_row())]
+            for idx in range(len(retval)):
+                if(self.fp_op.iszero(retval[idx])):
+                    retval[idx] = 0.0
+            return retval
 
         def substitute(self,entering_idx,other):
             if debug:
@@ -190,14 +200,14 @@ class SlackForm:
             variable_coefficient = self.get_coefficient(entering_idx)
 
             # TODO maybe not correct return the entering constraints
-            if not variable_coefficient or FPHelper.iszero(variable_coefficient):
+            if not variable_coefficient or self.fp_op.iszero(variable_coefficient):
                 if debug: print("subs => : %s " % (self))
                 return self
 
             # treat constant and coefficients as single row
             return_row = self.sexp(other,variable_coefficient)
             return_row[entering_idx+1] = None
-            retval = SlackForm.Constraint(row = return_row)
+            retval = SlackForm.Constraint(row = return_row,fp_op=self.fp_op)
 
             if debug: print("subs => : %s " % (retval))
 
@@ -226,12 +236,15 @@ class SlackForm:
             b = simplex.b
             c = simplex.c
             v = simplex.v
+            self.fp_op = simplex.fp_op
         else:
             n,m = (kwargs["n"],kwargs["m"])
             A = kwargs["A"]
             b = kwargs["b"]
             c = kwargs["c"]
             v = kwargs["v"]
+            self.fp_op = fp_ops(rel_tol=global_tolerance,abs_tol=global_tolerance)
+            
 
         # A represents the table of size totalxtotal
         # with None possible entreis
@@ -291,8 +304,8 @@ class SlackForm:
     def to_constraint(self,equation_idx = None,type='constraint'):
         "Particular equation-id from simplex wrapped  equation"
         if  equation_idx is None: # return objective constant
-            return SlackForm.Constraint(self.v,self.c)
-        return SlackForm.Constraint(self.b[equation_idx],self.A[equation_idx])
+            return SlackForm.Constraint(self.v,self.c,fp_op=self.fp_op)
+        return SlackForm.Constraint(self.b[equation_idx],self.A[equation_idx],fp_op=self.fp_op)
 
     def store(self,idx,new_eq):
         "Store constraint back into slack form"
@@ -313,19 +326,23 @@ class SlackForm:
         "Construct constriant based on leaving and entering ids "
         pivot = self.A[leaving_idx][entering_idx]
         pivot_inverse = -1 * (1.0 / pivot)
-        
+        if self.fp_op.iszero(pivot_inverse):
+            pivot_inverse = 0.0
         # Treat slack row as [b,A] @ leaving_idx
         row = chain([self.b[leaving_idx]],self.A[leaving_idx])
 
         def pivot_scale(value,default=0.0):
-            return (pivot_inverse * value) if (not value is None)  else default
+            value =  (pivot_inverse * value) if (not value is None)  else default
+            if self.fp_op.iszero(value): value = 0.0
+
+            return value
 
         scaled_row = list(map(pivot_scale ,row))
 
         # leaving idx will get 1/pivot
-        scaled_row[entering_idx+1],scaled_row[leaving_idx +1]  = None, (-1 * pivot_inverse)
-
-        return SlackForm.Constraint(row=scaled_row)
+        scaled_row[entering_idx+1],scaled_row[leaving_idx +1]  = None, (-1) * (pivot_inverse)
+        if self.fp_op.iszero(scaled_row[leaving_idx+1] ): scaled_row[leaving_idx+1]  = 0.0
+        return SlackForm.Constraint(row=scaled_row,fp_op=self.fp_op)
 
 
     def pivot(self,entering_idx,leaving_idx):
@@ -368,11 +385,11 @@ class SlackForm:
             print("independent: %s" % (self.independent))
 
     def objective_has_positive_coefficients(self):
-        return list_wrapper(self.c).contains(predicate = FPHelper.ispositive)
+        return list_wrapper(self.c).contains(predicate = self.fp_op.ispositive)
 
     def pick_entering_idx(self):
         return list_wrapper(self.c).find_first_idx(in_set = self.independent,
-                                                   by     = FPHelper.ispositive)
+                                                   by     = self.fp_op.ispositive)
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
@@ -393,8 +410,10 @@ class SlackForm:
             if debug:
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
 
-            if FPHelper.ispositive(coeff):
+            if self.fp_op.ispositive(coeff):
                 slack[idx]  = (constant/coeff)
+                if self.fp_op.iszero(slack[idx]): slack[idx] = 0.0
+                    
                 if debug:
                     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
                     if slack[idx]:
@@ -463,7 +482,7 @@ class SlackForm:
             coefficient = self.c[i]
             value = assignment[i]
             if coefficient and value:
-                opt_value += coefficient * value
+                opt_value += (coefficient * value)
 
         if debug:
             print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
@@ -483,6 +502,7 @@ class Simplex:
         self.v = 0
         self.n = n
         self.m = m
+        self.fp_op = fp_ops(rel_tol=global_tolerance,abs_tol=global_tolerance)
 
     @staticmethod
     def answer_type_str(anst):
@@ -505,8 +525,8 @@ class Simplex:
 
         (opt,ansx) = aux_sf.solve()
 
-        if not FPHelper.iszero(opt):#,rel_tol=1e-06,abs_tol=1e-06):
-            if debug: print("raising infeasible %f %s"%(opt,FPHelper.iszero(opt,rel_tol=1e-09,abs_tol=1e-09)))
+        if not self.fp_op.iszero(opt):
+            if debug: print("raising infeasible %f %s"%(opt,self.fp_op.iszero(opt)))
             raise InfeasibleError()
 
         if debug:
@@ -514,10 +534,10 @@ class Simplex:
 
         if debug: print("BEGIN:subsitite-auxiliary-form-objective ")
 
-        new_obj = SlackForm.Constraint(slackform.v,slackform.c)
+        new_obj = SlackForm.Constraint(slackform.v,slackform.c,fp_op=self.fp_op)
         for idx in aux_sf.dependent:
             constant, equation = aux_sf.b[idx],aux_sf.A[idx]
-            entering_constraint = SlackForm.Constraint(constant,equation)
+            entering_constraint = SlackForm.Constraint(constant,equation,fp_op=self.fp_op)
             new_obj = SlackForm.Constraint.substitute(new_obj,idx,entering_constraint)
 
         if debug:
@@ -595,7 +615,7 @@ class Simplex:
 
             # basic solution is already feasible
             opt,ansx = None,None
-            if min_constant > 0: # Basic form already in feasible form
+            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form
                 opt,ansx = SlackForm(simplex=self).solve()
                 self.optimum = opt
                 self.assignment = ansx
@@ -647,7 +667,7 @@ class Simplex:
             sum = 0
             for x in dot:
                 sum += x
-            assert(sum <= self.b[r] + 1e-3)
+            assert(sum <= (self.b[r]) + (1e-3))
             r+=1
 
     def solve_scipy(self,tolerance=global_tolerance):
@@ -667,11 +687,14 @@ class Simplex:
             print ("linprog_res.status : %d " % linprog_res.status)
         if self.anst == 0:
             assert (linprog_res.status == 0)
-
+            
         max_ref = np.dot(simplex.c, linprog_res.x)
         if debug:
-            print('max_ref =', max_ref)
+            print('max_ref = %f' % max_ref)
+            print('tolerance = %f' % tolerance)
+            print("delta= %f " % abs(simplex.optimum - max_ref))
             print(" %s " % linprog_res)
+
 
         assert (abs(simplex.optimum - max_ref) <= tolerance)
 
