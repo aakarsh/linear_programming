@@ -90,22 +90,22 @@ class SimplexTest(unittest.TestCase):
                                         simplex.Simplex.answer_type_str(anst)))
             raise err
 
-    # def test_unbounded_files(self):
-    #     pat = "./tests/inf/[0-9]*"
-    #     not_answer_p = lambda fname: not fname.endswith(".a")
-    #     for fname in filter(not_answer_p,glob.iglob(pat)):
-    #         self.assertAnswerType(1,fname)
-    #
-    # def test_nosolution_files(self):
-    #     pat = "./tests/no/[0-9]*"
-    #     not_answer_p = lambda fname: not fname.endswith(".a")
-    #     for fname in filter(not_answer_p,glob.iglob(pat)):
-    #         self.assertAnswerType(-1,fname)
+    def test_unbounded_files(self):
+        pat = "./tests/inf/[0-9]*"
+        not_answer_p = lambda fname: not fname.endswith(".a")
+        for fname in filter(not_answer_p,glob.iglob(pat)):
+            self.assertAnswerType(1,fname)
+    
+    def test_nosolution_files(self):
+        pat = "./tests/no/[0-9]*"
+        not_answer_p = lambda fname: not fname.endswith(".a")
+        for fname in filter(not_answer_p,glob.iglob(pat)):
+            self.assertAnswerType(-1,fname)
 
-    def test_tolerance_failure(self):
-        fname = "./fail/11"
-        simplex.debug=True            
-        self.assertValidBounded(fname)
+    # def test_tolerance_failure(self):
+    #     fname = "./fail/11"
+    #     simplex.debug=True            
+    #     self.assertValidBounded(fname)
 
 
             

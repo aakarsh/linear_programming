@@ -8,6 +8,8 @@ import itertools
 import functools
 import argparse
 
+from itertools import chain
+
 debug = False
 global_tolerance = 1e-06
 
@@ -21,15 +23,14 @@ class FPHelper:
         return x and (not FPHelper.iszero(x)) and (x > 0.0)
 
     @staticmethod
-    def isclose(a, b, rel_tol=None, abs_tol=None):
-        opt = lambda v,d : v if v else d
-        rel_tol = opt(rel_tol,global_tolerance)
-        abs_tol = opt(abs_tol,global_tolerance)
-        return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+    def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
+        return FPHelper.iseq(a,0.0,rel_tol,abs_tol)
 
     @staticmethod
-    def iszero(a,rel_tol=global_tolerance, abs_tol=global_tolerance):
-        return FPHelper.isclose(a,0.0,rel_tol,abs_tol)
+    def iseq(a, b, rel_tol=global_tolerance, abs_tol=global_tolerance):
+        return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
+
 
 class UnboundedError(Exception):
     "Raised when the solution for given equations is unbounded "
@@ -305,43 +306,31 @@ class SlackForm:
 
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
         "Substititue enterint constraint into equation "
-        new_eq  = self.to_constraint(equation_idx).substitute(entering_idx,entering_constraint)        
+        new_eq  = self.to_constraint(equation_idx).substitute(entering_idx,entering_constraint)
         self.store(equation_idx,new_eq)
 
     def make_pivot_constraint(self,leaving_idx, entering_idx):
         "Construct constriant based on leaving and entering ids "
+        pivot = self.A[leaving_idx][entering_idx]
+        pivot_inverse = -1 * (1.0 / pivot)
+        # Treat slack row as [b,A] @ leaving_idx
+        row = chain([self.b[leaving_idx]],self.A[leaving_idx])
 
-        slackform = self
-        A = slackform.A
-        b = slackform.b
+        def pivot_scale(value,default=0.0):
+            return (pivot_inverse * value) if (not value is None)  else default
 
-        independent = slackform.independent
-        dependent   = slackform.dependent
+        scaled_row = list(map(pivot_scale ,row))
 
-        nvars = len(independent) + len(dependent)
+        # leaving idx will get 1/pivot
+        scaled_row[entering_idx+1],scaled_row[leaving_idx +1]  = None, (-1 * pivot_inverse)
 
-        pivot_entry = A[leaving_idx][entering_idx]
-        pivot_value = abs(pivot_entry)
-        pivot_sign = -1 if pivot_entry > 0 else 1
-        pivot_inverse = pivot_sign * (1.0/pivot_value)
-
-        entering_constant = b[leaving_idx] * pivot_inverse
-        leaving_equation  = A[leaving_idx]
-
-        entering_equation = [None] * nvars
-        for idx in independent:
-            if not idx == entering_idx and not leaving_equation[idx] is None:
-                entering_equation[idx] = pivot_inverse * leaving_equation[idx]
-
-        entering_equation[entering_idx] = None
-        entering_equation[leaving_idx]  = -1 * pivot_inverse
-
-        return SlackForm.Constraint(entering_constant,entering_equation)
+        return SlackForm.Constraint(row=scaled_row)
 
 
     def pivot(self,entering_idx,leaving_idx):
         "Pivot on the entering and leaving ids"
         #
+        pivot_entry = self.A[leaving_idx][entering_idx]
         entering_constraint = self.make_pivot_constraint(leaving_idx,entering_idx)
         self.store(entering_idx,entering_constraint)
         #
@@ -356,7 +345,7 @@ class SlackForm:
         self.substitute_objective(entering_constraint,entering_idx)
         #
         # move leaving_idx  from dependent   to independent set
-        # move entering_idx from independent to dependent set        
+        # move entering_idx from independent to dependent set
         if debug:
             print("dependent: %s   -  %d + %d " % (self.dependent,leaving_idx,entering_idx))
 
@@ -654,17 +643,17 @@ class Simplex:
             dot = [ row[i] * ansx[i] for i in range(len(row))]
             sum = 0
             for x in dot:
-                sum += x                
+                sum += x
             assert(sum <= self.b[r] + 1e-3)
             r+=1
 
     def solve_scipy(self,tolerance=global_tolerance):
         import sys
         import numpy as np
-        from scipy.optimize import linprog        
+        from scipy.optimize import linprog
         linprog_res = linprog([-x for x in simplex.c], A_ub = simplex.A, b_ub = simplex.b, options = { 'tol': tolerance })
         return linprog_res
-                    
+
     def verify_scipy(self,tolerance=1e-3):
 
         linprog_res = self.solve_scipy()
@@ -673,14 +662,14 @@ class Simplex:
             print ("linprog_res.status : %d " % linprog_res.status)
         if self.anst == 0:
             assert (linprog_res.status == 0)
-            
+
         max_ref = np.dot(simplex.c, linprog_res.x)
         if debug:
             print('max_ref =', max_ref)
-            print(" %s " % linprog_res)        
+            print(" %s " % linprog_res)
 
         assert (abs(max_myprog - max_ref) <= tolerance)
-        
+
     def __repr__(self):
         return "A:\n%s\nb:\n%s\nc:\n%s\n" % (self.A,self.b,self.c)
 
@@ -711,32 +700,24 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    
-    
+
+
     if args.debug:
         debug = True
     if args.tolerance:
         global_tolerance = float(args.tolerance)
 
     simplex = Simplex.parse()
-    
+
     anst, ansx = simplex.solve()
 
     print(Simplex.answer_type_str(anst))
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-        
+
         if args.verify:
             simplex.verify_scipy(tolerance=1e-4)
         simplex.verify_bounds(tolerance=1e-4)
-        
+
     if args.scipy:
         print(simplex.solve_scipy())
-
-        
-
-        
-
-        
-
-
