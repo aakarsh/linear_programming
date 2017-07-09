@@ -14,7 +14,9 @@ from itertools import chain
 
 debug = False
 global_tolerance = 1e-09
-decimal.getcontext().prec =100
+decimal.getcontext().prec = 30
+
+# going back to float seems to have increased delta
 
 class fp_ops:
     
@@ -24,15 +26,27 @@ class fp_ops:
         self.tolerance = global_tolerance
 
     def ispositive(self,x):
-        return x and (not self.iszero(x)) and x - 0.0 > global_tolerance
+        return x and (not self.iszero(x)) and self.sub(x , 0.0) > Decimal(global_tolerance)
 
     def iszero(self,a):
-        return fp_ops(self.rel_tol,self.abs_tol).iseq(a,0.0)
+        return self.iseq(a,0.0)
 
     def iseq(self,a, b):
-        #return abs(a-b) <= max(self.rel_tol * max(abs(a), abs(b)), self.abs_tol)
-        return abs(a-b) <= global_tolerance
+        return abs(self.sub(a,b)) <= max(self.mul(self.rel_tol, max(abs(a), abs(b))), self.abs_tol)
+        #return abs(self.sub(a,b)) <= global_tolerance
 
+    def round(self,a): return Decimal(a)
+
+    def add(self, a, b): return self.round(a)+self.round(b)
+
+    def sub(self, a, b): return self.round(a)-self.round(b)
+
+    def mul(self, a, b): return self.round(a)*self.round(b)
+    def div(self, a, b): return self.round(a)/self.round(b)
+
+    def min(self, a, b): pass
+    
+    def max(self, a, b): pass
 
 
 class UnboundedError(Exception):
@@ -154,11 +168,11 @@ class list_wrapper():
     def set_values(l, value,idxs ):
         for idx in idxs: l[idx] = value
 
-    def min_index(l,max=float('inf')):
+    def min_index(l,max=float('inf'),custom_min=min):
         "Return a pair of (value,index) of elment with minimum index"
         zl = zip(l,range(len(l)))
         # hiding a comparison
-        return min(zl, key = lambda z: z[0] if z[0] else max)
+        return custom_min(zl, key = lambda z: z[0] if z[0] else max)
 
 class SlackForm:
     "Represents simplex in slack form ..."
@@ -184,8 +198,8 @@ class SlackForm:
 
         def sexp(self,other,factor):
             "Perform linear transform on two vectors self and other of a+(factor*b) "
-            opt    = lambda v :  v if v else 0
-            inc    = lambda a,c : opt(a) + factor*opt(c)
+            opt    = lambda v :  v if v else 0.0
+            inc    = lambda a,c : self.fp_op.add(opt(a) ,self.fp_op.mul( factor,opt(c)))
             
             retval =  [inc(a,c)  for a,c in zip(self.get_row(),other.get_row())]
             for idx in range(len(retval)):
@@ -325,14 +339,14 @@ class SlackForm:
     def make_pivot_constraint(self,leaving_idx, entering_idx):
         "Construct constriant based on leaving and entering ids "
         pivot = self.A[leaving_idx][entering_idx]
-        pivot_inverse = -1 * (1.0 / pivot)
+        pivot_inverse = self.fp_op.mul(-1 ,self.fp_op.div (1.0 , pivot))
         if self.fp_op.iszero(pivot_inverse):
             pivot_inverse = 0.0
         # Treat slack row as [b,A] @ leaving_idx
         row = chain([self.b[leaving_idx]],self.A[leaving_idx])
 
         def pivot_scale(value,default=0.0):
-            value =  (pivot_inverse * value) if (not value is None)  else default
+            value =  self.fp_op.mul(pivot_inverse , value) if (not value is None)  else default
             if self.fp_op.iszero(value): value = 0.0
 
             return value
@@ -340,7 +354,7 @@ class SlackForm:
         scaled_row = list(map(pivot_scale ,row))
 
         # leaving idx will get 1/pivot
-        scaled_row[entering_idx+1],scaled_row[leaving_idx +1]  = None, (-1) * (pivot_inverse)
+        scaled_row[entering_idx+1],scaled_row[leaving_idx +1]  = None, self.fp_op.mul((-1) , (pivot_inverse))
         if self.fp_op.iszero(scaled_row[leaving_idx+1] ): scaled_row[leaving_idx+1]  = 0.0
         return SlackForm.Constraint(row=scaled_row,fp_op=self.fp_op)
 
@@ -406,12 +420,12 @@ class SlackForm:
 
         for idx in self.dependent:
             constant = self.b[idx]
-            coeff    = -1 * self.A[idx][entering_idx]
+            coeff    = self.fp_op.mul(-1 , self.A[idx][entering_idx])
             if debug:
                 print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
 
             if self.fp_op.ispositive(coeff):
-                slack[idx]  = (constant/coeff)
+                slack[idx]  = self.fp_op.div(constant,coeff)
                 if self.fp_op.iszero(slack[idx]): slack[idx] = 0.0
                     
                 if debug:
@@ -482,7 +496,7 @@ class SlackForm:
             coefficient = self.c[i]
             value = assignment[i]
             if coefficient and value:
-                opt_value += (coefficient * value)
+                opt_value = self.fp_op.add(opt_value,self.fp_op.mul(coefficient, value))
 
         if debug:
             print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
@@ -692,11 +706,11 @@ class Simplex:
         if debug:
             print('max_ref = %f' % max_ref)
             print('tolerance = %f' % tolerance)
-            print("delta= %f " % abs(simplex.optimum - max_ref))
+            print("delta= %f " % abs(self.fp_op.sub(simplex.optimum , max_ref)))
             print(" %s " % linprog_res)
 
 
-        assert (abs(simplex.optimum - max_ref) <= tolerance)
+        assert (abs(self.fp_op.sub(simplex.optimum , max_ref)) <= tolerance)
 
     def __repr__(self):
         return "A:\n%s\nb:\n%s\nc:\n%s\n" % (self.A,self.b,self.c)
