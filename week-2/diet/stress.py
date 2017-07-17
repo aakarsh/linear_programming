@@ -17,7 +17,9 @@ def print_lp(n,m,A,b,c,file=sys.stdout):
   print(*b,file=file)
   print(*c,file=file)
   print(file=file)
-log = open("stress.log","a")  
+  
+log = open("stress.log","a")
+
 while True:
 
   n, m = np.random.randint(1, 8, size = (2,))

@@ -14,7 +14,7 @@ from itertools import chain
 
 debug = False
 global_tolerance = 1e-09
-decimal.getcontext().prec = 30
+decimal.getcontext().prec = 64
 
 # going back to float seems to have increased delta
 
@@ -26,27 +26,38 @@ class fp_ops:
         self.tolerance = global_tolerance
 
     def ispositive(self,x):
-        return x and (not self.iszero(x)) and self.sub(x , 0.0) > Decimal(global_tolerance)
+        return x and self.isgt(x,Decimal(0.0))
+    #(not self.iszero(x)) and self.sub(x , 0.0) > Decimal(global_tolerance)
 
-    def iszero(self,a):
-        return self.iseq(a,0.0)
+    def iszero(self,a): return self.iseq(a,0.0)
 
     def iseq(self,a, b):
         return abs(self.sub(a,b)) <= max(self.mul(self.rel_tol, max(abs(a), abs(b))), self.abs_tol)
         #return abs(self.sub(a,b)) <= global_tolerance
 
-    def round(self,a): return Decimal(a)
+    def isgt(self,a,b):
+        return Decimal(a)-Decimal(b) > -Decimal(self.abs_tol)  #and a > b
 
-    def add(self, a, b): return self.round(a)+self.round(b)
+    def islt(self,a,b):
+        return not self.iseq(a,b) and a < b
 
-    def sub(self, a, b): return self.round(a)-self.round(b)
+    def round(self,a):
+        return Decimal(0.0) if abs(Decimal(a) - Decimal(0.0)) <= Decimal(global_tolerance) else Decimal(a)
 
-    def mul(self, a, b): return self.round(a)*self.round(b)
-    def div(self, a, b): return self.round(a)/self.round(b)
+    def add(self, a, b):
+        return self.round(a)+self.round(b)
 
-    def min(self, a, b): pass
+    def sub(self, a, b):
+        return self.round(a)-self.round(b)
+
+    def mul(self, a, b):
+        return self.round(a)*self.round(b)
+
+    def div(self, a, b):
+        return self.round(a)/self.round(b)
+
     
-    def max(self, a, b): pass
+
 
 
 class UnboundedError(Exception):
@@ -91,22 +102,41 @@ class Matrix:
         return Matrix.PrettyPrinter.format_table(self.matrix)
 
     class PrettyPrinter:
+
+        @staticmethod
+        def format_number(elem,width=15,precision=4):
+            nfmt = "%%+%d.%df" %(width,precision)
+            sfmt = "%%%ds" %(width)
+            output=""
+            if not elem is None:
+                if  isinstance(elem,float) or isinstance(elem,Decimal):
+
+                    output += nfmt % float(elem) 
+                else:
+                    output += sfmt % elem
+            else:
+                output +=sfmt % "None"
+            return output
+
+        @staticmethod
+        def format_list(ls,sep="|",end="\n"):
+            output=""
+            first = True
+            for elem in ls:
+                if first:
+                    output += sep + " "
+                    first=False
+                output += Matrix.PrettyPrinter.format_number(elem,width=14)
+                output +=" %s " % sep
+            output += end
+            return output
+            
         @staticmethod
         def format_table(matrix):
             "Format matrix as a table"
             output =""
             for row in matrix:
-                first_col = True
-                for col in row:
-                    if first_col:
-                        output += "| "
-                        first_col=False
-                    if not col is None:
-                        output += "%f"% float(col)
-                    else:
-                        output +="%15s"%"None"
-                    output +=" | "
-                output += "\n"
+                output += Matrix.PrettyPrinter.format_list(row,sep="|",end="\n")
             return output
 
     def set_value_all_rows(matrix,row_idxs, value):
@@ -142,11 +172,10 @@ class list_wrapper():
         else:
             self.ls = args
 
-    def __repr__(self): return self.ls.__repr__()
+    def __repr__(self):         return Matrix.PrettyPrinter.format_list(self.ls.__repr__(),end="\n")
     def __getitem__(self,idx):  return self.ls[idx]
-    def __delitem__(self,idx):  del self.ls[idx]
-    def __setitem__(self,idx,value):
-        self.ls[idx] = value
+    def __delitem__(self,idx):  del    self.ls[idx]
+    def __setitem__(self,idx,value):   self.ls[idx] = value
 
     def __iter__(self):         return iter(self.ls)
     def __len__(self):          return len(self.ls)
@@ -189,7 +218,8 @@ class SlackForm:
                 self.row.extend(coefficients)
 
         def __repr__(self):
-            return " (%s) %s" % (self.row[0],self.row[1:])
+            return "%s" % Matrix.PrettyPrinter.format_list(self.row)
+        #(Matrix.PrettyPrinter.format_number(self.row[0]),Matrix.PrettyPrinter.format_list(self.row[1:]))
 
         def get_row(self):             return self.row
         def get_coefficients(self):    return self.row[1:] # O(n)
@@ -198,9 +228,9 @@ class SlackForm:
 
         def sexp(self,other,factor):
             "Perform linear transform on two vectors self and other of a+(factor*b) "
-            opt    = lambda v :  v if v else 0.0
+            opt    = lambda v :  v if not  v is None else 0.0
             inc    = lambda a,c : self.fp_op.add(opt(a) ,self.fp_op.mul( factor,opt(c)))
-            
+            #
             retval =  [inc(a,c)  for a,c in zip(self.get_row(),other.get_row())]
             for idx in range(len(retval)):
                 if(self.fp_op.iszero(retval[idx])):
@@ -208,14 +238,14 @@ class SlackForm:
             return retval
 
         def substitute(self,entering_idx,other):
-            if debug:
-                print("subs: %-20s @ [%3d] => %-20s " % (other, entering_idx, self))
-
+            # if debug:
+            #     print("subs: %-20s @ [%3d] => %-20s " % (other, entering_idx, self))
+                
             variable_coefficient = self.get_coefficient(entering_idx)
 
             # TODO maybe not correct return the entering constraints
             if not variable_coefficient or self.fp_op.iszero(variable_coefficient):
-                if debug: print("subs => : %s " % (self))
+                #if debug: print("subs => : %s " % (self))
                 return self
 
             # treat constant and coefficients as single row
@@ -223,7 +253,7 @@ class SlackForm:
             return_row[entering_idx+1] = None
             retval = SlackForm.Constraint(row = return_row,fp_op=self.fp_op)
 
-            if debug: print("subs => : %s " % (retval))
+            #if debug: print("subs => : %s " % (retval))
 
             return retval
 
@@ -247,15 +277,15 @@ class SlackForm:
             simplex = kwargs["simplex"]
             n,m = (simplex.n,simplex.m)
             A = simplex.A
-            b = simplex.b
-            c = simplex.c
+            b = list(map(Decimal,simplex.b))
+            c = list(map(Decimal,simplex.c))
             v = simplex.v
             self.fp_op = simplex.fp_op
         else:
             n,m = (kwargs["n"],kwargs["m"])
             A = kwargs["A"]
             b = kwargs["b"]
-            c = kwargs["c"]
+            c = list(map(Decimal,(kwargs["c"])))
             v = kwargs["v"]
             self.fp_op = fp_ops(rel_tol=global_tolerance,abs_tol=global_tolerance)
             
@@ -281,7 +311,7 @@ class SlackForm:
             print(Matrix(matrix=A))
 
         if debug:
-            print("orig-b:%s"% b)
+            print("orig-b:\n%s" % Matrix.PrettyPrinter.format_list(b))
 
         self.b = list(map(float,b))
 
@@ -289,14 +319,14 @@ class SlackForm:
         self.b.extend([None]*(nvars-len(b)))
 
         if debug:
-            print("b:%s"% self.b)
+            print("b:\n%s"% self.b)
 
         self.c = [None] * n
         self.c.extend(map(float,c))
 
         if debug:
-            print("orig-c:%s"% c)
-            print("c:%s"% self.c)
+            print("orig-c:%s" % Matrix.PrettyPrinter.format_list(c))
+            print("c:%s"      % Matrix.PrettyPrinter.format_list(self.c))
 
         self.v = v
         # Original variables
@@ -308,6 +338,7 @@ class SlackForm:
         if debug:
             print("dependent : %s, independent : %s" %
                   (self.independent,self.dependent))
+        
 
         leaving_coeff,leaving_idx = list_wrapper(self.b).min_index()
 
@@ -327,8 +358,7 @@ class SlackForm:
 
     def substitute_objective(self,entering_constraint,entering_idx):
         new_obj = self.to_constraint(type='objective').substitute(entering_idx,entering_constraint)
-        if debug:
-            print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
+        #if debug: print("subs-obj: (%s,%s) => %s " % (self.c,self.v,new_obj))
         self.v,self.c = new_obj.get_constant(),new_obj.get_coefficients()
 
     def substitute_equation(self,equation_idx,entering_constraint,entering_idx):
@@ -348,7 +378,6 @@ class SlackForm:
         def pivot_scale(value,default=0.0):
             value =  self.fp_op.mul(pivot_inverse , value) if (not value is None)  else default
             if self.fp_op.iszero(value): value = 0.0
-
             return value
 
         scaled_row = list(map(pivot_scale ,row))
@@ -359,7 +388,7 @@ class SlackForm:
         return SlackForm.Constraint(row=scaled_row,fp_op=self.fp_op)
 
 
-    def pivot(self,entering_idx,leaving_idx):
+    def pivot(self,entering_idx,leaving_idx,phase=0):
         "Pivot on the entering and leaving ids"
         #
         entering_constraint = self.make_pivot_constraint(leaving_idx,entering_idx)
@@ -399,51 +428,57 @@ class SlackForm:
             print("independent: %s" % (self.independent))
 
     def objective_has_positive_coefficients(self):
-        return list_wrapper(self.c).contains(predicate = self.fp_op.ispositive)
+        return list_wrapper(self.c).contains(predicate = lambda x: x and x >= -global_tolerance)
+        #return list_wrapper(self.c).contains(predicate = self.fp_op.ispositive)
 
     def pick_entering_idx(self):
         return list_wrapper(self.c).find_first_idx(in_set = self.independent,
-                                                   by     = self.fp_op.ispositive)
+                                                   by     = lambda x: x and x >= -global_tolerance)
+                                                   #self.fp_op.ispositive)
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
-            print("pick_leaving_idx: dependent:%s entering:%d" %(self.dependent,entering_idx))
+            print("pick_leaving_idx: dependent:%s entering:%d" % (self.dependent,entering_idx))
 
         slack = [None] * len(self.b)
 
         # TODO: Seeing non-None  values in b where it is not a depenedent
 
         if debug:
-            print("b: %s" % self.b)
-            print("c: %s" %  self.c)
+            print("b: %s" %  Matrix.PrettyPrinter.format_list(self.b))
+            print("c: %s" %  Matrix.PrettyPrinter.format_list(self.c))
             print("\nA:\n %s\n" % Matrix(matrix=self.A))
 
         for idx in self.dependent:
             constant = self.b[idx]
             coeff    = self.fp_op.mul(-1 , self.A[idx][entering_idx])
-            if debug:
-                print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
+            
+            # if debug:
+            #     print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
 
             if self.fp_op.ispositive(coeff):
                 slack[idx]  = self.fp_op.div(constant,coeff)
                 if self.fp_op.iszero(slack[idx]): slack[idx] = 0.0
+                
+            if constant <= global_tolerance or coeff <= global_tolerance:
+                slack[idx] = 0.0
                     
-                if debug:
-                    print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
-                    if slack[idx]:
-                        print("%2.2f",slack[idx])
-                    else: print()
+                # if debug:
+                #     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
+                #     if slack[idx]:
+                #         print("%2.2f",slack[idx])
+                #     else: print()
 
-        if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
-        if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
+        # if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
+        # if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
 
-        min_slack,slack_idx = list_wrapper(slack).min_index()
+        min_slack,slack_idx = list_wrapper(slack).min_index() 
 
         if debug:
             if min_slack:
-                print("slack: %s \nmin_slack[%d] :%2.2f " % (slack,slack_idx,min_slack))
+                print("slack: %s \nmin_slack[%d] :%2.2f " % (Matrix.PrettyPrinter.format_list(slack),slack_idx,min_slack))
             else:
-                print("min_slack is None slacks: %s",slack )
+                print("min_slack is None slacks: %s",   Matrix.PrettyPrinter.format_list(slack ))
 
             print("leave: %d" % slack_idx)
 
@@ -451,22 +486,27 @@ class SlackForm:
 
 
     def __repr__(self):
-        return "A:\n%s\nb:%s" %(Matrix(matrix=self.A),self.b)
+        return "A:\n%s\nb:\n%s" % (Matrix(matrix=self.A), Matrix.PrettyPrinter.format_list(self.b))
 
-    def solve(self):
-        if debug:
-            print("Enter SlackForm.solve():")
+    def solve(self,phase):  
         cnt = 0
-
+        opt_d = lambda v: Decimal(v) if not v is None else None
+        self.b = list(map(opt_d,self.b))
         while self.objective_has_positive_coefficients():
-            if debug:
-                print(self)
-            cnt+=1
+            #
+            # TODO: Print out the value of objective function at each
+            # we are here and need to solve this.
+            #
+            if debug: print(self)
+            cnt += 1
 
             if debug:
-                print("pivot: %d" % cnt)
+                print("=========== Pivot Iteration : %d Phase %d ==========" % (cnt,phase) )
                 print("%s" % Matrix(matrix=self.A))
-                print(" Objective > %s: %s " % (self.c,self.v))
+                # why is this like this
+                print("objective:\n%s\n" % Matrix.PrettyPrinter.format_list(self.c))
+                print("constant:\n%s " % self.v)
+
 
             entering_idx = self.pick_entering_idx()
             leaving_idx  = self.pick_leaving_idx(entering_idx)
@@ -477,12 +517,12 @@ class SlackForm:
             if debug:
                 print("pivot:  %s >> (dep) >> %s" % (entering_idx,leaving_idx))
 
-            self.pivot(entering_idx , leaving_idx)
+            self.pivot(entering_idx , leaving_idx,phase)
 
         if debug:
-            print("\nA:\n%s\n" % Matrix(matrix=self.A))
-            print("\nb:%s\n"   % self.b)
-            print("objective after pivots: %s" % self.c)
+            print("\nA:\n%s\n"   % Matrix(matrix=self.A))
+            print("\nb:\n%s\n"   % Matrix.PrettyPrinter.format_list(self.b))
+            #print("objective after pivots: %s" % Matrix.PrettyPrinter.format_list(self.c))
 
         # Variable assignment after pivot stops.
         assignment = [0] * len(self.b)
@@ -495,11 +535,11 @@ class SlackForm:
         for i in range(0,len(self.c)):
             coefficient = self.c[i]
             value = assignment[i]
-            if coefficient and value:
+            if not coefficient is  None and not value is None  and not self.fp_op.iszero(coefficient) and not self.fp_op.iszero(value):
                 opt_value = self.fp_op.add(opt_value,self.fp_op.mul(coefficient, value))
 
         if debug:
-            print("SlackForm: optvalue : %d assignment:%s" % (opt_value,assignment))
+            print("opt-value:%d ,assignment:%s" % (opt_value,Matrix.PrettyPrinter.format_list(assignment)))
         # does that mean all assigned variables were explicity assigned.
         # how does it correspond to initial non-slack assignmentx
         return (opt_value, assignment)
@@ -527,6 +567,7 @@ class Simplex:
 
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
+        
         slackform = SlackForm(A=self.A,b=self.b,c=self.c,v=0,n=self.n,m=self.m)
         aux_simplex = self.make_auxiliary_form()
         aux_sf = SlackForm(simplex = aux_simplex)
@@ -534,28 +575,27 @@ class Simplex:
 
         if debug:
             print("%d => (dependent) => %d " % (nvars,min_idx))
-
-        aux_sf.pivot( self.n + self.m , min_idx)
-
-        (opt,ansx) = aux_sf.solve()
+        aux_sf.phase = 0
+        aux_sf.pivot( self.n + self.m , min_idx,phase=0)
+        if debug: print("========== Search for Auxiliar Form ========== ")
+        (opt,ansx) = aux_sf.solve(phase=0)
+        if debug: print("========== End Search for Auxiliar Form ========== ")
 
         if not self.fp_op.iszero(opt):
-            if debug: print("raising infeasible %f %s"%(opt,self.fp_op.iszero(opt)))
+            if debug: print("Raising Infeasible %f %s" % (opt,self.fp_op.iszero(opt)))
             raise InfeasibleError()
-
+        
         if debug:
             print("dependent : %s" % aux_sf.dependent)
 
-        if debug: print("BEGIN:subsitite-auxiliary-form-objective ")
-
-        new_obj = SlackForm.Constraint(slackform.v,slackform.c,fp_op=self.fp_op)
+        new_obj = SlackForm.Constraint(slackform.v, slackform.c, fp_op = self.fp_op)
+        
         for idx in aux_sf.dependent:
             constant, equation = aux_sf.b[idx],aux_sf.A[idx]
-            entering_constraint = SlackForm.Constraint(constant,equation,fp_op=self.fp_op)
+            entering_constraint = SlackForm.Constraint(constant,equation,fp_op = self.fp_op)
             new_obj = SlackForm.Constraint.substitute(new_obj,idx,entering_constraint)
 
-        if debug:
-            print("sub-obj: %s" % new_obj)
+        # if debug: print("sub-obj: %s" % new_obj)
         if debug: print("END:subsitite-auxiliary-form-objective ")
 
         list_wrapper(new_obj.get_coefficients()).set_values( None, aux_sf.dependent)
@@ -569,7 +609,7 @@ class Simplex:
         if debug:
             print("Objective: %s" % new_obj)
             print("A: \n%s" % aux_sf.A)
-            print("b: \n%s" % aux_sf.b)
+            print("b: \n%s" % Matrix.PrettyPrinter.format_list(aux_sf.b))
             print("depenedents:   \n%s"  % aux_sf.dependent)
             print("indepenedents: \n%s"  % aux_sf.independent)
 
@@ -591,33 +631,36 @@ class Simplex:
         if debug:
             print("objective: %s " % new_obj)
             print("A: \n%s" % aux_sf.A)
-            print("b: \n%s" % aux_sf.b)
+            print("b: \n%s" % Matrix.PrettyPrinter.format_list(aux_sf.b))
             print("depenedents:   \n%s"  % aux_sf.dependent)
             print("indepenedents: \n%s"  % aux_sf.independent)
 
         return aux_sf
 
-    def solve(self):
+    def solve(self): # phase used to track
         if debug: print("\nSimplex solve");
         try:
-            if debug:
-                print("Simplex:b %s"%self.b)
+            
+            if debug: print("simplex:b %s"%self.b)
+            
             min_constant, idx = list_wrapper(self.b).min_index();
 
-            if  min_constant < 0: # 0-comparison
+            if  self.fp_op.islt(min_constant , 0): # 0-comparison
+                
                 if debug:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
+
                 simplex_basic_form = self.find_basic_feasible(idx)
+                
                 try:
                     if debug: print("-"*100)
-                    opt,ansx = simplex_basic_form.solve()
+                    if debug: print("========== Solve Transformed  basic form ========== ")
+                    opt,ansx = simplex_basic_form.solve(phase=1)
+                    if debug: print("========== End Transformed  basic form ========== ")
                     self.optimum = opt
                     self.assignment = ansx
                     ## slack variables are the first n varialbes
                     del self.assignment[:self.n]
-                    if debug:
-                        print("OPTIMIMUM VALUE: %f(%s)" %(opt,debug))
-                        print("ASSIGNMENT: %s " % self.assignment)
                     self.anst = 0
                     return (0,self.assignment)
                 except UnboundedError as err:
@@ -629,14 +672,16 @@ class Simplex:
 
             # basic solution is already feasible
             opt,ansx = None,None
-            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form
-                opt,ansx = SlackForm(simplex=self).solve()
+            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form                
+                opt,ansx = SlackForm(simplex=self).solve(phase=2)
                 self.optimum = opt
                 self.assignment = ansx
                 del self.assignment[:self.n]
+                
             if debug:
-                print("Optimimum Value: %f" %opt)
-                print("Assignment: %s " % self.assignment)
+                print("Optimimum Value: %f" % opt)
+                print("Assignment: %s "     % Matrix.PrettyPrinter.format_list(self.assignment))
+                
             return (0,self.assignment)
         except UnboundedError as err:
             return(1,None)
@@ -652,7 +697,7 @@ class Simplex:
         #
         aux_b = self.b[:]
         if debug:
-            print("make_auxiliary_form: b:%s aux-b:%s"%(self.b,aux_b))
+            print("make_auxiliary_form: b:\n%s\naux-b:\n%s" % (self.b,aux_b))
         #
         # set objective function: -x_{nvars}
         aux_c = ([0] * self.m)
@@ -686,15 +731,20 @@ class Simplex:
 
     def solve_scipy(self,tolerance=global_tolerance):
         import sys
-        import numpy as np
-        from scipy.optimize import linprog
-        linprog_res = linprog([-x for x in simplex.c], A_ub = simplex.A, b_ub = simplex.b, options = { 'tol': tolerance })
+        import numpy as np        
+        import lprog
+        
+        linprog_res = lprog.linprog([-x for x in simplex.c], 
+                                    A_ub = simplex.A,
+                                    b_ub = simplex.b,
+                                    options = { 'tol': tolerance, }, callback=lprog.linprog_verbose_callback)
         return linprog_res
 
     def verify_scipy(self,tolerance=1e-3):
         import sys
         import numpy as np
         from scipy.optimize import linprog
+        
         linprog_res = self.solve_scipy()
         if debug:
             print('max_myprog =', self.optimum)
