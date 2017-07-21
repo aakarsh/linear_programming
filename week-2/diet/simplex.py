@@ -13,13 +13,13 @@ from itertools import chain
 
 
 debug = False
-global_tolerance = 1e-09
+global_tolerance = 1e-12
 decimal.getcontext().prec = 64
 
 # going back to float seems to have increased delta
 
 class fp_ops:
-    
+
     def __init__(self,rel_tol=global_tolerance, abs_tol=global_tolerance):
         self.abs_tol = abs_tol
         self.rel_tol = rel_tol
@@ -56,7 +56,7 @@ class fp_ops:
     def div(self, a, b):
         return self.round(a)/self.round(b)
 
-    
+
 
 
 
@@ -77,11 +77,94 @@ class Matrix:
             self.matrix = kwargs["matrix"]
         else:
             initial = None
-            if "initial" in kwargs and kwargs["initial"]:
+            if "initial" in kwargs :
                 initial = kwargs["initial"]
             self.matrix =  [ [initial for x in range(ncols)] for y in range(nrows) ]
 
-    def __getitem__(self,idx):  return self.matrix[idx]
+
+    def _slice(self,i,type="row"):
+        if type == "row": max = len(self.matrix)
+        else:             max = len(self.matrix[0])
+
+        if isinstance(i,slice):
+            start ,stop,step = i.start,i.stop,i.step
+            if start is None: start = 0
+            if start < 0: start = max + start
+            if stop  is None: stop  = max
+            if stop < 0 : stop = max + stop
+            if step  is None: step  = 1
+            return slice(start,stop,step)
+        else:
+            if i < 0 : i = max + i
+            return slice(i,i+1,1)
+
+    def _map(self,row_slice,col_slice,action = lambda rs,cs,matrix: None ):
+        r = 0
+        count = 0
+        loop_ctx={}
+        for rs in range(row_slice.start,row_slice.stop,row_slice.step):
+            c = 0
+            for cs in range(col_slice.start,col_slice.stop,col_slice.step):
+                loop_ctx["r"],loop_ctx["c"] = r,c
+                loop_ctx["count"] = count
+                loop_ctx["element"] = self.matrix[rs][cs]
+                e = self.matrix[rs][cs]
+                action(rs,cs,loop_ctx)
+                c += 1
+                count +=1
+            r += 1
+
+
+    def __getitem__(self,idx):
+        if hasattr(idx,'__getitem__'):
+            i,j = idx
+            row_slice = self._slice(i,type="row")
+            col_slice = self._slice(j,type="column")
+            retval = []
+            self._map(row_slice,col_slice,lambda rs,cs,ctx: retval.append(self.matrix[rs][cs]))
+            if len(retval) == 1 : return retval[0]
+            return list_wrapper(retval)
+        else:
+            return self.matrix[idx]
+
+
+    def __setitem__(self,idx,value):
+        if hasattr(idx,'__getitem__'):
+            sl = idx
+            row_slice = self._slice(sl[0],type="row")
+            col_slice = self._slice(sl[1],type="col")
+
+            value_iterator = iter(value) if hasattr(value,"__iter__") else None
+
+            def do_assign(rs,cs,ctx):
+                r,c,count = ctx["r"],ctx["c"],ctx["count"]
+                if hasattr(value,"__getitem__"):
+                    if r < len(value) and  hasattr(value[r],"__getitem__"):
+                        if c < len(value[r]):
+                            self.matrix[rs][cs] = value[r][c]
+                    elif count < len(value) :
+                        self.matrix[rs][cs] = value[count]
+                elif not value_iterator is None :
+                    self.matrix[rs][cs] = next(value_iterator)
+                else:
+                    self.matrix[rs][cs] = value
+            self._map(row_slice,col_slice,do_assign)
+        else:
+            self.matrix[idx] = value
+
+
+    def fill_diagonal(self,sl,value):
+        row_slice = self._slice(sl[0],type="row")
+        col_slice = self._slice(sl[1],type="column")
+        step_size = 0
+        for rs in range(row_slice.start,row_slice.stop,row_slice.step):
+            cs = step_size+col_slice.start
+            if cs > col_slice.stop:
+                break;
+            self.matrix[rs][cs] = value
+            step_size+=1
+
+
     def __delitem__(self,idx):  del self.matrix[idx]
     def __iter__(self):         return iter(self.matrix)
     def __len__(self):          return len(self.matrix)
@@ -92,14 +175,15 @@ class Matrix:
     def pop_column(matrix):
         for row in matrix: row.pop()
 
-    def __setitem__(self,idx,value):
-        lv,lm = len(value),len(self.matrix[idx])
-        if lv != lm:
-            raise ValueError("%d does not match row length : %d" % (lv,lm))
-        self.matrix[idx] = value
-
     def __repr__(self):
         return Matrix.PrettyPrinter.format_table(self.matrix)
+
+    def shape(self):
+        return (len(self.matrix),len(self.matrix[0]))
+
+    @staticmethod
+    def zeros(shape):
+        return Matrix(shape[0],shape[1],initial=0)
 
     class PrettyPrinter:
 
@@ -111,7 +195,7 @@ class Matrix:
             if not elem is None:
                 if  isinstance(elem,float) or isinstance(elem,Decimal):
 
-                    output += nfmt % float(elem) 
+                    output += nfmt % float(elem)
                 else:
                     output += sfmt % elem
             else:
@@ -130,7 +214,7 @@ class Matrix:
                 output +=" %s " % sep
             output += end
             return output
-            
+
         @staticmethod
         def format_table(matrix):
             "Format matrix as a table"
@@ -167,29 +251,80 @@ class list_wrapper():
     "Wrapper class around built in list providing some method"
 
     def __init__(self,*args):
-        if len(args) == 1 and isinstance(args[0],list):
-            self.ls = args[0]
+        if len(args) == 1 and hasattr(args[0],'__iter__'):
+            self.ls = list(args[0])
         else:
             self.ls = args
 
-    def __repr__(self):         return Matrix.PrettyPrinter.format_list(self.ls.__repr__(),end="\n")
+    def __repr__(self):         return Matrix.PrettyPrinter.format_list(self.ls,end="\n")
     def __getitem__(self,idx):  return self.ls[idx]
-    def __delitem__(self,idx):  del    self.ls[idx]
     def __setitem__(self,idx,value):   self.ls[idx] = value
+    def __delitem__(self,idx):  del    self.ls[idx]
+
+    def __mul__(self,value):
+        return list_wrapper([e*value for e in self.ls])
+
+    def __truediv__(self,value):
+        return list_wrapper([e/value for e in self.ls])
+
+    def __add__(self,value):
+        return list_wrapper([e+value for e in self.ls])
+
+    def __sub__(self,value):
+        if isinstance(value,list_wrapper):
+            retlist = [None] * len(self.ls)
+            idx = 0
+            for v in value:
+                retlist[idx] = self.ls[idx] -v
+                idx += 1
+            return list_wrapper(retlist)
+        else:
+            return list_wrapper([e-value for e in self.ls])
+
+    def __neg__(self):
+        return self.__mul__(-1)
 
     def __iter__(self):         return iter(self.ls)
     def __len__(self):          return len(self.ls)
 
+    def __lt__(self,other):
+        if isinstance(other,int):
+            return self.bools(lambda e: e < other)
+
+    def __gt__(self,other):
+        if isinstance(other,int):
+            return self.bools(lambda e: e > other)
+
+    def bools(self,predicate = lambda v : 1 if not v is None else 0):
+        "Retrun a 1/0 list with predicate applied to each element in the list"
+        retval = [0] * len(self.ls)
+        idx = 0
+        for e in self.ls:
+            if predicate(e):
+                retval[idx] = 1
+                idx += 1
+        return list_wrapper(retval)
+
+    def count(self,predicate):
+        count = 0
+        for e in self.ls:
+            if predicate(e):
+                count += 1
+        return count
+
+    def count_nonzero(self):
+        return self.count(lambda e: e!=0)
+
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
 
-    def find_first_idx(l, in_set = None, by = lambda x: True):
-        "Find first element of list set in by predicate "
-        if not in_set:
-            in_set = set(range(len(l)))
-        for (idx, value) in l.zip_set(in_set,by):
-            return idx
-        return None
+    # def find_first_idx(l, in_set = None, by = lambda x: True):
+    #     "Find first element of list set in by predicate "
+    #     if not in_set:
+    #         in_set = set(range(len(l)))
+    #     for (idx, value) in l.zip_set(in_set,by):
+    #         return idx
+    #     return None
 
     def contains(ls , predicate = lambda x: x):
         return any(predicate(v) for v in ls)
@@ -199,9 +334,18 @@ class list_wrapper():
 
     def min_index(l,max=float('inf'),custom_min=min):
         "Return a pair of (value,index) of elment with minimum index"
-        zl = zip(l,range(len(l)))
-        # hiding a comparison
-        return custom_min(zl, key = lambda z: z[0] if z[0] else max)
+        idx = 0
+        min_idx,min_value = None,None
+        for c_v in l:
+            if c_v is not None and abs(c_v) >= global_tolerance and  ((min_value is None) or (min_value-c_v  >= global_tolerance)):
+                min_value = c_v
+                min_idx   = idx
+            idx+=1
+        return (min_value,min_idx) if ((not min_value is None ) ) else (None,None)
+
+        # zl = zip(l,range(len(l)))
+        # # hiding a comparison
+        # return custom_min(zl, key = lambda z: z[0] if z[0] else max)
 
 class SlackForm:
     "Represents simplex in slack form ..."
@@ -240,7 +384,7 @@ class SlackForm:
         def substitute(self,entering_idx,other):
             # if debug:
             #     print("subs: %-20s @ [%3d] => %-20s " % (other, entering_idx, self))
-                
+
             variable_coefficient = self.get_coefficient(entering_idx)
 
             # TODO maybe not correct return the entering constraints
@@ -271,9 +415,11 @@ class SlackForm:
         if "m" in kwargs:
              self.m = kwargs["m"]
 
+
     def __init__(self,**kwargs):
         # expand
         if ("simplex" in kwargs) and kwargs["simplex"]:
+
             simplex = kwargs["simplex"]
             n,m = (simplex.n,simplex.m)
             A = simplex.A
@@ -281,20 +427,80 @@ class SlackForm:
             c = list(map(Decimal,simplex.c))
             v = simplex.v
             self.fp_op = simplex.fp_op
+            # TODO: Add tableau here which parrallels the simplex tableau
         else:
+            # TODO: Make the tableau here.
             n,m = (kwargs["n"],kwargs["m"])
             A = kwargs["A"]
             b = kwargs["b"]
             c = list(map(Decimal,(kwargs["c"])))
             v = kwargs["v"]
             self.fp_op = fp_ops(rel_tol=global_tolerance,abs_tol=global_tolerance)
-            
+
 
         # A represents the table of size totalxtotal
         # with None possible entreis
         nvars = n+m
         self.A = Matrix(nvars,nvars)
 
+        # One slack variable for each upper bound constraint
+        n_slack  = m
+
+        # Artificial variables for every negative value of b.
+        n_artificial = (list_wrapper(b) < 0).count_nonzero()
+
+        self.T = Matrix.zeros([m+2 ,n+n_slack+n_artificial+1])
+
+        # copy objective
+        self.T[-2,:n]  = -list_wrapper(c)
+        self.T[-2,-1]  = -1 * v
+
+        # copy constants
+        self.T[0:-2,-1] = b
+
+        # copy A
+        self.T[0:m,:n]   = A
+
+        self.T.fill_diagonal([slice(0,m,1), slice(n,n+n_slack,1)],1)
+
+        if debug:
+            print("T:")
+            print(self.T)
+
+        slcount = 0 # count of slack variables
+        avcount = 0 # count of artificial
+        self.basis = [0] * m
+        artificial = [0] * n_artificial
+
+        for i in range(m) :
+            # Negative constant need to introduce a artificial variables
+            if self.T[i,-1] < 0:
+                # namespace of artificial variables starts just beyond
+                self.basis[i] = n + n_slack + avcount
+                artificial[avcount] = i
+                
+                self.T[i,:-1] *= -1
+                self.T[i,-1]  *= -1
+                
+                self.T[ i, self.basis[i]]  = 1
+                self.T[-1, self.basis[i]]  = 1
+                
+                avcount += 1
+            else:
+                self.basis[i] = n+slcount
+                slcount +=1
+
+        if debug:
+            print("T:")
+            print(self.T)
+            
+        for r in artificial:
+            self.T[-1,:] = self.T[-1,:] - self.T[r,:]
+
+        if debug:
+            print("T:")
+            print(self.T)
+        
         # We will use a numbering where
         # dependent variables will be from [x_n to x_nvars)
         # independent variables will be from [x_0 to x_n)
@@ -338,8 +544,8 @@ class SlackForm:
         if debug:
             print("dependent : %s, independent : %s" %
                   (self.independent,self.dependent))
-        
 
+        #TODO  do explicit comparisons
         leaving_coeff,leaving_idx = list_wrapper(self.b).min_index()
 
         if debug:
@@ -408,7 +614,7 @@ class SlackForm:
         # move entering_idx from independent to dependent set
         if debug:
             print("dependent: %s   -  %d + %d " % (self.dependent,leaving_idx,entering_idx))
-            
+
         def set_replace(s,rem=None,add=None):
             s.remove(rem)
             s.add(add)
@@ -431,10 +637,22 @@ class SlackForm:
         return list_wrapper(self.c).contains(predicate = lambda x: x and x >= -global_tolerance)
         #return list_wrapper(self.c).contains(predicate = self.fp_op.ispositive)
 
+    # TODO: This is a deviation since since we use min for simplex
+    # but first negative index here.
     def pick_entering_idx(self):
-        return list_wrapper(self.c).find_first_idx(in_set = self.independent,
-                                                   by     = lambda x: x and x >= -global_tolerance)
-                                                   #self.fp_op.ispositive)
+        idx = 0
+        min_idx,min_value = -1,None
+        for c_v in self.c:
+            if c_v is not None and c_v >= global_tolerance and ((min_value is None) or c_v < min_value ):
+                min_value = c_v
+                min_idx   = idx
+            idx+=1
+
+        return min_idx if ((not min_value is None ) and min_value >= global_tolerance) else None
+
+    #list_wrapper(self.c).find_first_idx(in_set = self.independent,
+    #by     = lambda x: x and x >= -global_tolerance)
+    #self.fp_op.ispositive)
 
     def pick_leaving_idx(self,entering_idx):
         if debug:
@@ -452,17 +670,17 @@ class SlackForm:
         for idx in self.dependent:
             constant = self.b[idx]
             coeff    = self.fp_op.mul(-1 , self.A[idx][entering_idx])
-            
+
             # if debug:
             #     print("slack[%d]=:: [%s]/[%s] " % (idx,constant,coeff))
 
             if self.fp_op.ispositive(coeff):
                 slack[idx]  = self.fp_op.div(constant,coeff)
                 if self.fp_op.iszero(slack[idx]): slack[idx] = 0.0
-                
+
             if constant <= global_tolerance or coeff <= global_tolerance:
                 slack[idx] = 0.0
-                    
+
                 # if debug:
                 #     print("slack[%d]=> [%f]/[%f] " % (idx,constant,coeff))
                 #     if slack[idx]:
@@ -472,15 +690,16 @@ class SlackForm:
         # if debug: print("A col[%d] %s" % (entering_idx,[self.A[idx][entering_idx] for idx in self.dependent]))
         # if debug: print("b %s" % [self.b[idx] for idx in self.dependent])
 
-        min_slack,slack_idx = list_wrapper(slack).min_index() 
+        #TODO : Perform explicit Comparisons Instead
+        min_slack,slack_idx = list_wrapper(slack).min_index()
 
         if debug:
             if min_slack:
-                print("slack: %s \nmin_slack[%d] :%2.2f " % (Matrix.PrettyPrinter.format_list(slack),slack_idx,min_slack))
+                print("slack: %s \nmin_slack[%2.5f] :%2.5f " % (Matrix.PrettyPrinter.format_list(slack),slack_idx,min_slack))
             else:
                 print("min_slack is None slacks: %s",   Matrix.PrettyPrinter.format_list(slack ))
-
-            print("leave: %d" % slack_idx)
+            if slack_idx:
+                print("leave: %d" % slack_idx)
 
         return slack_idx if min_slack else None
 
@@ -488,7 +707,7 @@ class SlackForm:
     def __repr__(self):
         return "A:\n%s\nb:\n%s" % (Matrix(matrix=self.A), Matrix.PrettyPrinter.format_list(self.b))
 
-    def solve(self,phase):  
+    def solve(self,phase):
         cnt = 0
         opt_d = lambda v: Decimal(v) if not v is None else None
         self.b = list(map(opt_d,self.b))
@@ -567,7 +786,7 @@ class Simplex:
 
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
-        
+
         slackform = SlackForm(A=self.A,b=self.b,c=self.c,v=0,n=self.n,m=self.m)
         aux_simplex = self.make_auxiliary_form()
         aux_sf = SlackForm(simplex = aux_simplex)
@@ -584,12 +803,12 @@ class Simplex:
         if not self.fp_op.iszero(opt):
             if debug: print("Raising Infeasible %f %s" % (opt,self.fp_op.iszero(opt)))
             raise InfeasibleError()
-        
+
         if debug:
             print("dependent : %s" % aux_sf.dependent)
 
         new_obj = SlackForm.Constraint(slackform.v, slackform.c, fp_op = self.fp_op)
-        
+
         for idx in aux_sf.dependent:
             constant, equation = aux_sf.b[idx],aux_sf.A[idx]
             entering_constraint = SlackForm.Constraint(constant,equation,fp_op = self.fp_op)
@@ -640,18 +859,20 @@ class Simplex:
     def solve(self): # phase used to track
         if debug: print("\nSimplex solve");
         try:
-            
+
             if debug: print("simplex:b %s"%self.b)
-            
+
             min_constant, idx = list_wrapper(self.b).min_index();
 
+            #TODO : Error-Here
+
             if  self.fp_op.islt(min_constant , 0): # 0-comparison
-                
+
                 if debug:
                     print(" Currently not in basic form :%d - index %d " % (min_constant,idx))
 
                 simplex_basic_form = self.find_basic_feasible(idx)
-                
+
                 try:
                     if debug: print("-"*100)
                     if debug: print("========== Solve Transformed  basic form ========== ")
@@ -672,16 +893,16 @@ class Simplex:
 
             # basic solution is already feasible
             opt,ansx = None,None
-            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form                
+            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form
                 opt,ansx = SlackForm(simplex=self).solve(phase=2)
                 self.optimum = opt
                 self.assignment = ansx
                 del self.assignment[:self.n]
-                
+
             if debug:
                 print("Optimimum Value: %f" % opt)
                 print("Assignment: %s "     % Matrix.PrettyPrinter.format_list(self.assignment))
-                
+
             return (0,self.assignment)
         except UnboundedError as err:
             return(1,None)
@@ -731,10 +952,10 @@ class Simplex:
 
     def solve_scipy(self,tolerance=global_tolerance):
         import sys
-        import numpy as np        
+        import numpy as np
         import lprog
-        
-        linprog_res = lprog.linprog([-x for x in simplex.c], 
+
+        linprog_res = lprog.linprog([-x for x in simplex.c],
                                     A_ub = simplex.A,
                                     b_ub = simplex.b,
                                     options = { 'tol': tolerance, }, callback=lprog.linprog_verbose_callback)
@@ -744,14 +965,14 @@ class Simplex:
         import sys
         import numpy as np
         from scipy.optimize import linprog
-        
+
         linprog_res = self.solve_scipy()
         if debug:
             print('max_myprog =', self.optimum)
             print ("linprog_res.status : %d " % linprog_res.status)
         if self.anst == 0:
             assert (linprog_res.status == 0)
-            
+
         max_ref = np.dot(simplex.c, linprog_res.x)
         if debug:
             print('max_ref = %f' % max_ref)
