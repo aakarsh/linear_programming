@@ -57,9 +57,6 @@ class fp_ops:
         return self.round(a)/self.round(b)
 
 
-
-
-
 class UnboundedError(Exception):
     "Raised when the solution for given equations is unbounded "
     pass
@@ -261,28 +258,62 @@ class list_wrapper():
     def __setitem__(self,idx,value):   self.ls[idx] = value
     def __delitem__(self,idx):  del    self.ls[idx]
 
-    def __mul__(self,value):
-        return list_wrapper([e*value for e in self.ls])
+    def masked_where(self,condition):
+        return list_wrapper([elem if not condition(elem) else None for elem in self.ls ])
 
-    def __truediv__(self,value):
-        return list_wrapper([e/value for e in self.ls])
+    def _isnum(self,v): return isinstance(v,Decimal) or isinstance(v,float) or isinstance(v,int)
+    def _iseq(self,v) : return isinstance(v,list)    or isinstance(v,list_wrapper)
 
-    def __add__(self,value):
-        return list_wrapper([e+value for e in self.ls])
+    def min_index(self):
+        
+        idx = 0
+        min = None
+        min_idx = None
+        found = False
 
-    def __sub__(self,value):
-        if isinstance(value,list_wrapper):
-            retlist = [None] * len(self.ls)
+        for elem in self.ls:
+
+            if elem is None:
+                idx += 1
+                continue
+
+            if min is None:
+                min = elem
+                min_idx = idx
+
+            if min > elem:
+                found=True
+                min = pivot_elem
+                min_idx  = idx
+                
+            idx += 1
+            
+        return (found,min_idx)
+
+
+
+    def apply_op(self,value,operator):
+        op = self.wrap_optinal(operator)
+        if self._isnum(value):
+            return list_wrapper([op(value,element) for element in self.ls])
+        elif self._iseq(value):
+            ret = [None] * len(self.ls)
             idx = 0
             for v in value:
-                retlist[idx] = self.ls[idx] -v
+                if not self.ls[idx] is  None and not v is None:
+                    ret[idx] = op(self.ls[idx], v)
                 idx += 1
-            return list_wrapper(retlist)
-        else:
-            return list_wrapper([e-value for e in self.ls])
+            return list_wrapper(ret)
 
-    def __neg__(self):
-        return self.__mul__(-1)
+
+    def wrap_optinal(self,operator):
+        return lambda a,b: None if (a is None) or (b is None) else operator(Decimal(a),Decimal(b))
+
+    def __mul__(self,value):      return self.apply_op(value, lambda a,b: a * b )
+    def __truediv__(self, value): return self.apply_op(value, lambda a,b: a / b if not ((b is None) or (abs(b) < global_tolerance)) else None )
+    def __add__(self,value):      return self.apply_op(value, lambda a,b: a+b)
+    def __sub__(self,value):      return self.apply_op(value, lambda a,b: a-b)
+    def __neg__(self):            return self.apply_op(-1,    lambda a,b: a*b)
 
     def __iter__(self):         return iter(self.ls)
     def __len__(self):          return len(self.ls)
@@ -312,8 +343,8 @@ class list_wrapper():
                 count += 1
         return count
 
-    def count_nonzero(self):
-        return self.count(lambda e: e!=0)
+    def count_nonzero(self): return self.count(lambda e: e!=0)
+    def count_notnone(self): return self.count(lambda e: not e is None)
 
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
@@ -415,6 +446,107 @@ class SlackForm:
         if "m" in kwargs:
              self.m = kwargs["m"]
 
+    def _pivot_col(self,T,tol=global_tolerance):
+        """Go through the objective row and find the minimum entry above
+           tolerance"""
+
+        # ignore all positive values where: positive is defined as
+        # anything greater than -tol
+        
+        ignored = lambda e: (e is None) or (e >= -tol)
+        
+        objective = T[-1,:-1].masked_where(ignored)
+        
+        return objective.min_index()
+
+    def _pivot_row(self,T,pivcol,tol,phase=1):
+        """ Find the appropriate pivot row. """
+
+        if phase == 1: skip_rows = 2
+        else: skip_rows = 1
+
+        # All pivot column entries
+        ma = [ e if e > tol else None for e in T[:-skip_rows,pivcol] ]
+
+        # no possible pivot entries found
+        non_zero_ma = list(filter(lambda x: x is not None,ma))
+        if len(non_zero_ma) == 0 : return (False,None)
+
+        mb = self.T[:-skip_rows,-1]
+        #[ e if col > tol else None for e in T[:-skip_rows,-1] ]
+
+        mr = list_wrapper(ma) / list_wrapper(mb)
+        print("mr: %s" % mr)
+
+        min = None
+        min_index = None
+        found = False
+        idx = 0
+
+        for e in mr:
+
+            if e is None :
+                idx += 1
+                continue
+
+            if min is None:
+                min = e
+                min_index = idx
+
+            if min >= e :
+                min = e
+                min_index = idx
+                found = True
+
+            idx += 1
+
+        return (found,min_index)
+
+    def basic_feasible_form(self, T, n, basis, tol = global_tolerance):
+        # Ignore original and new objectives.
+        m = T.shape()[0] - 2
+        nvars = (T.shape()[1]-1)
+        complete = False
+        solution = [0] * nvars
+
+        max_iterations = 5
+        nit = 0
+
+        while not complete and (nit < max_iterations):
+            nit += 1
+            pivcol_found, pivcol = self._pivot_col(T,tol)
+            if debug:
+                print("T:")
+                print(T)
+
+            print("pivcol_found : %s pivcol: %s" % (pivcol_found, pivcol))
+
+            if not pivcol_found:  # Finished with all the columns, in basic form
+                status, complete = 0, True
+                break
+
+            pivrow_found, pivrow = self._pivot_row(T,pivcol,tol)
+
+            print("pivrow_found : %s pivrow: %s" % (pivrow_found, pivrow))
+
+            if not pivrow_found: # Not finding the pivot row is very serious.
+                status, complete = 3, True
+                break
+
+            print("pivcol_found: %s pivrow_found :%s " % (pivcol_found,pivrow_found))
+
+            if debug and not complete:
+                print("---------- [Pivot Entry] : [%d,%d]:%d-> " % (pivrow, pivcol,T[pivrow,pivcol]))
+
+            if not complete: # perform the pivot on pivot entry
+                basis[pivrow] = pivcol
+                pivval = T[pivrow][pivcol]
+                T[pivrow, :]  = T[pivrow,:] / pivval
+                for irow in range(T.shape()[0]):
+                    if irow != pivrow:
+                        T[irow, : ] = T[irow,:] - T[pivrow, :]* T[irow,pivcol]
+
+
 
     def __init__(self,**kwargs):
         # expand
@@ -478,29 +610,33 @@ class SlackForm:
                 # namespace of artificial variables starts just beyond
                 self.basis[i] = n + n_slack + avcount
                 artificial[avcount] = i
-                
+
                 self.T[i,:-1] *= -1
                 self.T[i,-1]  *= -1
-                
+
                 self.T[ i, self.basis[i]]  = 1
                 self.T[-1, self.basis[i]]  = 1
-                
+
                 avcount += 1
+
             else:
-                self.basis[i] = n+slcount
+                self.basis[i] = n + slcount
                 slcount +=1
 
         if debug:
             print("T:")
             print(self.T)
-            
+
         for r in artificial:
             self.T[-1,:] = self.T[-1,:] - self.T[r,:]
 
         if debug:
             print("T:")
             print(self.T)
-        
+
+        self.basic_feasible_form(self.T,0,self.basis)
+
+
         # We will use a numbering where
         # dependent variables will be from [x_n to x_nvars)
         # independent variables will be from [x_0 to x_n)
@@ -1013,8 +1149,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-
-
     if args.debug:
         debug = True
     if args.tolerance:
@@ -1030,7 +1164,6 @@ if __name__ == "__main__":
         simplex.verify_bounds(tolerance=global_tolerance)
         if args.verify:
             simplex.verify_scipy(tolerance=global_tolerance)
-
 
     if args.scipy:
         print(simplex.solve_scipy())
