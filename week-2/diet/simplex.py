@@ -265,7 +265,7 @@ class list_wrapper():
     def _iseq(self,v) : return isinstance(v,list)    or isinstance(v,list_wrapper)
 
     def min_index(self):
-        
+
         idx = 0
         min = None
         min_idx = None
@@ -285,9 +285,9 @@ class list_wrapper():
                 found=True
                 min = pivot_elem
                 min_idx  = idx
-                
+
             idx += 1
-            
+
         return (found,min_idx)
 
 
@@ -452,12 +452,13 @@ class SlackForm:
 
         # ignore all positive values where: positive is defined as
         # anything greater than -tol
-        
+
         ignored = lambda e: (e is None) or (e >= -tol)
-        
+
         objective = T[-1,:-1].masked_where(ignored)
-        
+
         return objective.min_index()
+
 
     def _pivot_row(self,T,pivcol,tol,phase=1):
         """ Find the appropriate pivot row. """
@@ -465,45 +466,33 @@ class SlackForm:
         if phase == 1: skip_rows = 2
         else: skip_rows = 1
 
-        # All pivot column entries
-        ma = [ e if e > tol else None for e in T[:-skip_rows,pivcol] ]
+        
+        # mask values less than tolerance
+        ignored = lambda e: (e is None) or (e <= tol)
+        
+        ma = T[:-skip_rows,pivcol].masked_where(ignored)
 
-        # no possible pivot entries found
-        non_zero_ma = list(filter(lambda x: x is not None,ma))
-        if len(non_zero_ma) == 0 : return (False,None)
+        # all pivot column entries
 
-        mb = self.T[:-skip_rows,-1]
-        #[ e if col > tol else None for e in T[:-skip_rows,-1] ]
+        # ma = [ e if e > tol else None for e in T[:-skip_rows,pivcol] ]
+        # non_zero_ma = list(filter(lambda x: x is not None,ma))        
+        # no-possible pivot entries found.
 
-        mr = list_wrapper(ma) / list_wrapper(mb)
+        if ma.count_notnone() == 0 : return (False,None)
+
+        mb = self.T[:-skip_rows,-1].masked_where(ignored)
+
+        ## [ e if col > tol else None for e in T[:-skip_rows,-1] ]
+
+        mr = mb / ma
         print("mr: %s" % mr)
 
-        min = None
-        min_index = None
-        found = False
-        idx = 0
-
-        for e in mr:
-
-            if e is None :
-                idx += 1
-                continue
-
-            if min is None:
-                min = e
-                min_index = idx
-
-            if min >= e :
-                min = e
-                min_index = idx
-                found = True
-
-            idx += 1
-
-        return (found,min_index)
-
+        return mr.min_index()
+    
+    
     def basic_feasible_form(self, T, n, basis, tol = global_tolerance):
         # Ignore original and new objectives.
+        
         m = T.shape()[0] - 2
         nvars = (T.shape()[1]-1)
         complete = False
@@ -536,7 +525,7 @@ class SlackForm:
             print("pivcol_found: %s pivrow_found :%s " % (pivcol_found,pivrow_found))
 
             if debug and not complete:
-                print("---------- [Pivot Entry] : [%d,%d]:%d-> " % (pivrow, pivcol,T[pivrow,pivcol]))
+                print("Pivot Element : [%d, %d]:%d-> " % (pivrow, pivcol,T[pivrow,pivcol]))
 
             if not complete: # perform the pivot on pivot entry
                 basis[pivrow] = pivcol
