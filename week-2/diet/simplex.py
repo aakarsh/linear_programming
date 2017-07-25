@@ -126,7 +126,8 @@ class Matrix:
 
 
     def __setitem__(self,idx,value):
-        if hasattr(idx,'__getitem__'):
+        # tuplie
+        if isinstance(idx,tuple):
             sl = idx
             row_slice = self._slice(sl[0],type="row")
             col_slice = self._slice(sl[1],type="col")
@@ -145,22 +146,21 @@ class Matrix:
                     self.matrix[rs][cs] = next(value_iterator)
                 else:
                     self.matrix[rs][cs] = value
-            self._map(row_slice,col_slice,do_assign)
+                    
+            self._map(row_slice,col_slice,do_assign)            
         else:
             self.matrix[idx] = value
-
 
     def fill_diagonal(self,sl,value):
         row_slice = self._slice(sl[0],type="row")
         col_slice = self._slice(sl[1],type="column")
         step_size = 0
         for rs in range(row_slice.start,row_slice.stop,row_slice.step):
-            cs = step_size+col_slice.start
+            cs = step_size + col_slice.start
             if cs > col_slice.stop:
                 break;
             self.matrix[rs][cs] = value
-            step_size+=1
-
+            step_size += 1
 
     def __delitem__(self,idx):  del self.matrix[idx]
     def __iter__(self):         return iter(self.matrix)
@@ -255,7 +255,16 @@ class list_wrapper():
 
     def __repr__(self):         return Matrix.PrettyPrinter.format_list(self.ls,end="\n")
     def __getitem__(self,idx):  return self.ls[idx]
-    def __setitem__(self,idx,value):   self.ls[idx] = value
+    
+    def __setitem__(self,idx,value):
+        if isinstance(idx,list):
+            i = 0
+            for id in idx:
+                self.ls[id] = value[i]
+                i += 1
+        else:
+            self.ls[idx] = value
+        
     def __delitem__(self,idx):  del    self.ls[idx]
 
     def masked_where(self,condition):
@@ -295,7 +304,7 @@ class list_wrapper():
     def apply_op(self,value,operator):
         op = self.wrap_optinal(operator)
         if self._isnum(value):
-            return list_wrapper([op(value,element) for element in self.ls])
+            return list_wrapper([op(element,value) for element in self.ls])
         elif self._iseq(value):
             ret = [None] * len(self.ls)
             idx = 0
@@ -310,7 +319,7 @@ class list_wrapper():
         return lambda a,b: None if (a is None) or (b is None) else operator(Decimal(a),Decimal(b))
 
     def __mul__(self,value):      return self.apply_op(value, lambda a,b: a * b )
-    def __truediv__(self, value): return self.apply_op(value, lambda a,b: a / b if not ((b is None) or (abs(b) < global_tolerance)) else None )
+    def __truediv__(self, value): return self.apply_op(value, lambda a,b: a / b if not (b is None) and not (abs(b) < global_tolerance) else None )
     def __add__(self,value):      return self.apply_op(value, lambda a,b: a+b)
     def __sub__(self,value):      return self.apply_op(value, lambda a,b: a-b)
     def __neg__(self):            return self.apply_op(-1,    lambda a,b: a*b)
@@ -462,37 +471,30 @@ class SlackForm:
 
     def _pivot_row(self,T,pivcol,tol,phase=1):
         """ Find the appropriate pivot row. """
-
-        if phase == 1: skip_rows = 2
-        else: skip_rows = 1
-
         
+        first_phase = phase == 1        
+        skip_rows = 2 if first_phase else 1
+
         # mask values less than tolerance
         ignored = lambda e: (e is None) or (e <= tol)
-        
+
         ma = T[:-skip_rows,pivcol].masked_where(ignored)
 
         # all pivot column entries
-
-        # ma = [ e if e > tol else None for e in T[:-skip_rows,pivcol] ]
-        # non_zero_ma = list(filter(lambda x: x is not None,ma))        
-        # no-possible pivot entries found.
-
         if ma.count_notnone() == 0 : return (False,None)
 
         mb = self.T[:-skip_rows,-1].masked_where(ignored)
-
-        ## [ e if col > tol else None for e in T[:-skip_rows,-1] ]
 
         mr = mb / ma
         print("mr: %s" % mr)
 
         return mr.min_index()
-    
-    
+
+
+
     def basic_feasible_form(self, T, n, basis, tol = global_tolerance):
         # Ignore original and new objectives.
-        
+
         m = T.shape()[0] - 2
         nvars = (T.shape()[1]-1)
         complete = False
@@ -508,8 +510,6 @@ class SlackForm:
                 print("T:")
                 print(T)
 
-            print("pivcol_found : %s pivcol: %s" % (pivcol_found, pivcol))
-
             if not pivcol_found:  # Finished with all the columns, in basic form
                 status, complete = 0, True
                 break
@@ -522,18 +522,30 @@ class SlackForm:
                 status, complete = 3, True
                 break
 
-            print("pivcol_found: %s pivrow_found :%s " % (pivcol_found,pivrow_found))
-
             if debug and not complete:
-                print("Pivot Element : [%d, %d]:%d-> " % (pivrow, pivcol,T[pivrow,pivcol]))
-
+                
+                print("Pivot Element : T[%d, %d](%d)\n" % (pivrow, pivcol,T[pivrow,pivcol]))
+                print("Basic Variables : %s\n" % basis)
+                
+                # print out basic solution
+                # something else
+                # something something else.
+                
             if not complete: # perform the pivot on pivot entry
                 basis[pivrow] = pivcol
+
                 pivval = T[pivrow][pivcol]
-                T[pivrow, :]  = T[pivrow,:] / pivval
+                T[pivrow,:]  = T[pivrow,:] / pivval
+                if debug:
+                    print("Pivot Row: %s" % T[pivrow,:])
                 for irow in range(T.shape()[0]):
-                    if irow != pivrow:
-                        T[irow, : ] = T[irow,:] - T[pivrow, :]* T[irow,pivcol]
+                    if irow != pivrow:                 
+                        T[irow,:] = T[irow,:] - T[pivrow,:] * T[irow,pivcol]
+        if complete:
+            print("Pivot Result")
+            print("T : \n%s" % T)
+            print("Basic Variables : %s\n" % basis)
+
 
 
 
@@ -588,15 +600,19 @@ class SlackForm:
             print("T:")
             print(self.T)
 
-        slcount = 0 # count of slack variables
-        avcount = 0 # count of artificial
+        slcount = 0 # - count of slack variables
+        avcount = 0 # - count of artificial
         self.basis = [0] * m
         artificial = [0] * n_artificial
 
         for i in range(m) :
+
             # Negative constant need to introduce a artificial variables
-            if self.T[i,-1] < 0:
+
+            if self.T[i,-1] < 0 :
+
                 # namespace of artificial variables starts just beyond
+
                 self.basis[i] = n + n_slack + avcount
                 artificial[avcount] = i
 
@@ -670,7 +686,7 @@ class SlackForm:
             print("dependent : %s, independent : %s" %
                   (self.independent,self.dependent))
 
-        #TODO  do explicit comparisons
+        # TODO - do explicit comparisons
         leaving_coeff,leaving_idx = list_wrapper(self.b).min_index()
 
         if debug:
