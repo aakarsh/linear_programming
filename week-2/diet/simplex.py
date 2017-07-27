@@ -146,8 +146,8 @@ class Matrix:
                     self.matrix[rs][cs] = next(value_iterator)
                 else:
                     self.matrix[rs][cs] = value
-                    
-            self._map(row_slice,col_slice,do_assign)            
+
+            self._map(row_slice,col_slice,do_assign)
         else:
             self.matrix[idx] = value
 
@@ -171,6 +171,18 @@ class Matrix:
 
     def pop_column(matrix):
         for row in matrix: row.pop()
+
+    def del_columns(self,col_idxs):
+        "Delete_columns: (matrix, col, idxs)"
+        for row in self:
+            deleted = 0
+            for idx in col_idxs:
+                del row[idx - deleted]
+                deleted += 1
+
+    def del_rows(self, row_idxs):
+        for idx in row_idxs:
+            del self[idx]
 
     def __repr__(self):
         return Matrix.PrettyPrinter.format_table(self.matrix)
@@ -255,7 +267,7 @@ class list_wrapper():
 
     def __repr__(self):         return Matrix.PrettyPrinter.format_list(self.ls,end="\n")
     def __getitem__(self,idx):  return self.ls[idx]
-    
+
     def __setitem__(self,idx,value):
         if isinstance(idx,list):
             i = 0
@@ -264,7 +276,7 @@ class list_wrapper():
                 i += 1
         else:
             self.ls[idx] = value
-        
+
     def __delitem__(self,idx):  del    self.ls[idx]
 
     def masked_where(self,condition):
@@ -471,16 +483,16 @@ class SlackForm:
 
     def _pivot_row(self,T,pivcol,tol,phase=1):
         """ Find the appropriate pivot row. """
-        
-        first_phase = phase == 1        
+
+        first_phase = phase == 1
         skip_rows = 2 if first_phase else 1
 
-        # mask values less than tolerance
+        # Mask values less than tolerance
         ignored = lambda e: (e is None) or (e <= tol)
 
         ma = T[:-skip_rows,pivcol].masked_where(ignored)
 
-        # all pivot column entries
+        # All pivot column entries
         if ma.count_notnone() == 0 : return (False,None)
 
         mb = self.T[:-skip_rows,-1].masked_where(ignored)
@@ -492,10 +504,14 @@ class SlackForm:
 
 
 
-    def basic_feasible_form(self, T, n, basis, tol = global_tolerance):
+    def _simplex_solve(self, T, n, basis, phase =2, tol = global_tolerance):
         # Ignore original and new objectives.
 
-        m = T.shape()[0] - 2
+        if phase == 1:
+            m = T.shape()[0] - 2
+        elif phase == 2:
+            m = T.shape()[0] - 1
+
         nvars = (T.shape()[1]-1)
         complete = False
         solution = [0] * nvars
@@ -503,7 +519,29 @@ class SlackForm:
         max_iterations = 5
         nit = 0
 
+        # Identify and substitute
+        if phase == 2:
+            # Identify aritificial variables still in the objective
+            ncols = T.shape()[1]
+            is_artificial = lambda idx : basis[idx] > ncols - 2
+
+            # Check basis for artificial variables
+            variables = list(filter(is_artificial,range(len(basis))))
+
+            if debug:
+                print("Basic Variables : %s\n" % basis)
+                print("Artificial Pivot Variables : %s " % variables)
+
+            for pivrow in variables:
+                non_zero_col = lambda col: self.T[pivrow,col] != 0
+                pivcols = filter(non_zero_col,range(ncols -1))
+
+                if len(pivcols) == 0: continue
+                self.do_pivot(T,pivrow,pivcols[0],basis,phase)
+
+
         while not complete and (nit < max_iterations):
+
             nit += 1
             pivcol_found, pivcol = self._pivot_col(T,tol)
             if debug:
@@ -522,31 +560,37 @@ class SlackForm:
                 status, complete = 3, True
                 break
 
-            if debug and not complete:
-                
-                print("Pivot Element : T[%d, %d](%d)\n" % (pivrow, pivcol,T[pivrow,pivcol]))
-                print("Basic Variables : %s\n" % basis)
-                
-                # print out basic solution
-                # something else
-                # something something else.
-                
             if not complete: # perform the pivot on pivot entry
-                basis[pivrow] = pivcol
+                self.do_pivot(T,pivrow,pivcol, basis,phase)
 
-                pivval = T[pivrow][pivcol]
-                T[pivrow,:]  = T[pivrow,:] / pivval
-                if debug:
-                    print("Pivot Row: %s" % T[pivrow,:])
-                for irow in range(T.shape()[0]):
-                    if irow != pivrow:                 
-                        T[irow,:] = T[irow,:] - T[pivrow,:] * T[irow,pivcol]
         if complete:
-            print("Pivot Result")
+            print("Pivot Result == Phase: %d == " % phase)
+            print("Basic Variables : %s\n" % basis)
+            print("T : \n%s" % T)
+
+
+
+    def do_pivot(self, T, pivrow, pivcol, basis, phase):
+        "Perform the pivot operation using pivot row and pivot column and basis"
+
+        if debug:
+            print("Before Pivot[%d,%d] " % (pivrow,pivcol))
             print("T : \n%s" % T)
             print("Basic Variables : %s\n" % basis)
 
 
+        basis[pivrow] = pivcol
+        pivval = T[pivrow][pivcol]
+        T[pivrow,:]  = T[pivrow,:] / pivval
+
+        for irow in range(T.shape()[0]):
+            if irow != pivrow:
+                T[irow,:] = T[irow,:] - T[pivrow,:] * T[irow,pivcol]
+
+        if debug:
+            print("After Pivot[%d,%d] " % (pivrow,pivcol))
+            print("T : \n%s" % T)
+            print("Basic Variables : %s\n" % basis)
 
 
     def __init__(self,**kwargs):
@@ -607,12 +651,10 @@ class SlackForm:
 
         for i in range(m) :
 
-            # Negative constant need to introduce a artificial variables
+            # negative constant need to introduce a artificial variables
 
             if self.T[i,-1] < 0 :
-
                 # namespace of artificial variables starts just beyond
-
                 self.basis[i] = n + n_slack + avcount
                 artificial[avcount] = i
 
@@ -626,7 +668,7 @@ class SlackForm:
 
             else:
                 self.basis[i] = n + slcount
-                slcount +=1
+                slcount += 1
 
         if debug:
             print("T:")
@@ -639,8 +681,20 @@ class SlackForm:
             print("T:")
             print(self.T)
 
-        self.basic_feasible_form(self.T,0,self.basis)
+        # Pivot to basic flexible.
+        self._simplex_solve(self.T,n,self.basis,phase=1)
+        print("Pseudo-Objecive : %d " % self.T[-1,-1])
 
+        if abs(self.T[-1,-1]) < global_tolerance:
+            # Remove pseudo-objective row
+            self.T.del_rows([len(self.T)-1])
+            # Remove artificial variable columns
+            self.T.del_columns(range(n+n_slack,n+n_slack+n_artificial))
+            self._simplex_solve(self.T,n,self.basis,phase=2)
+        else:
+            # Infeasible without starting point
+            status = 2
+            print("Infeasible soltion")
 
         # We will use a numbering where
         # dependent variables will be from [x_n to x_nvars)
@@ -683,15 +737,13 @@ class SlackForm:
         self.dependent     = set(range(0,n))
 
         if debug:
-            print("dependent : %s, independent : %s" %
-                  (self.independent,self.dependent))
+            print("dependent : %s, independent : %s" % (self.independent,self.dependent))
 
         # TODO - do explicit comparisons
         leaving_coeff,leaving_idx = list_wrapper(self.b).min_index()
 
         if debug:
-            print("leaving_coeff:%d leaving_idx: %d"
-                  % (leaving_coeff,leaving_idx))
+            print("leaving_coeff:%d leaving_idx: %d" % (leaving_coeff,leaving_idx))
 
     def to_constraint(self,equation_idx = None,type='constraint'):
         "Particular equation-id from simplex wrapped  equation"
@@ -1143,7 +1195,7 @@ class Simplex:
             c = list(map(int, stream.readline().split()))
             return Simplex(A,b,c,n,m)
 
-if __name__ == "__main__":
+if __name__ =="__main__":
 
     parser = argparse.ArgumentParser(prog="simplex.py",
                                      description='Run simplex on matrix from standard input.')
