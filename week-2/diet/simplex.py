@@ -65,6 +65,7 @@ class InfeasibleError(Exception):
     "Raised when the solution for given equations is infeasible(has no-solution)."
     pass
 
+
 class Matrix:
 
     "Simplistic matrix class."
@@ -115,11 +116,26 @@ class Matrix:
     def __getitem__(self,idx):
         if hasattr(idx,'__getitem__'):
             i,j = idx
-            row_slice = self._slice(i,type="row")
-            col_slice = self._slice(j,type="column")
+            is_cell_ref = not isinstance(i,slice) and not isinstance(j,slice)
+
+            # print("Matrix::__getitem__(i,j) : (%s,%s) "  % idx)
+            row_slice = self._slice(i, type="row")
+            # print("Matrix::__getitem__(row_slice: %s)  " % row_slice)
+            col_slice = self._slice(j, type="column")
+            # print("Matrix::__getitem__(col_slice: %s)  " % col_slice)
+
             retval = []
-            self._map(row_slice,col_slice,lambda rs,cs,ctx: retval.append(self.matrix[rs][cs]))
-            if len(retval) == 1 : return retval[0]
+
+            def save_cell(rs,cs,ctx):
+                v  = self.matrix[rs][cs]
+                retval.append(v)
+
+            self._map(row_slice,col_slice, save_cell)
+
+            # TODO: Why do I have this here ?
+            if is_cell_ref and len(retval) == 1 :
+                return retval[0]
+
             return list_wrapper(retval)
         else:
             return self.matrix[idx]
@@ -306,12 +322,8 @@ class list_wrapper():
                 found=True
                 min = pivot_elem
                 min_idx  = idx
-
             idx += 1
-
         return (found,min_idx)
-
-
 
     def apply_op(self,value,operator):
         op = self.wrap_optinal(operator)
@@ -325,7 +337,6 @@ class list_wrapper():
                     ret[idx] = op(self.ls[idx], v)
                 idx += 1
             return list_wrapper(ret)
-
 
     def wrap_optinal(self,operator):
         return lambda a,b: None if (a is None) or (b is None) else operator(Decimal(a),Decimal(b))
@@ -365,10 +376,12 @@ class list_wrapper():
         return count
 
     def count_nonzero(self):
-        return self.count(lambda e: e!=0)
+        def non_zero(n): return n!= 0
+        return self.count(non_zero)
 
     def count_notnone(self):
-        return self.count(lambda e: not e is None)
+        def not_none(n): return not n is None 
+        return self.count(not_none)
 
     def zip_set(l,member_set,by = lambda x: True):
         return [(i,l[i]) for i in member_set if by(l[i])]
@@ -879,23 +892,31 @@ class SlackForm:
 
 class Tableau:
 
-    def __init__(self,A,b,c,n,m,simplex=None):
+    # TODO : Write tests for Infeasible and Unbounded solutions, other stuff here.
+
+    def __init__(self,A,b,c,n,m, simplex=None):
+        
         if simplex:
-            (self.A,self.b,self.c,self.n,self.m,self.v) = (simplex.A,simplex.b,simplex.c,
-                                                           simplex.n,simplex.m,simplex.v)
+            (self.A,self.b,self.c,
+             self.n,self.m,self.v) = (simplex.A,simplex.b,simplex.c,
+                                      simplex.n,simplex.m,simplex.v)
             v = 0
             fp_ops = simplex.fp_ops
+            
         else:
-            (self.A,self.b,self.c,self.n,self.m,self.v) = (A,b,c,n,m,0)
+            (self.A,self.b,self.c,
+             self.n,self.m,self.v) = (A,b,c,n,m,0)
+            
             self.v = 0
             v = self.v
+            # what is difference between decimal and numpy 64
             c = list(map(Decimal,c))
-            
+
         # A represents the table of size total x total with None possible entries
         nvars = n + m
-        
+
         # One slack variable for each upper bound constraint
-        self.n_slack  = m
+        self.n_slack = m
 
         # Artificial variables for every negative value of b.
         self.n_artificial = (list_wrapper(b) < 0).count_nonzero()
@@ -912,8 +933,8 @@ class Tableau:
         # copy A
         self.T[0:m,:n]   = A
 
-        self.T.fill_diagonal([slice(0,m,1), slice(n,n+self.n_slack,1)],1)
-        
+        self.T.fill_diagonal([slice(0,m,1), slice(n,n + self.n_slack, 1)],1)
+
         if debug:
             print("T:")
             print(self.T)
@@ -925,7 +946,7 @@ class Tableau:
         artificial = [0] * self.n_artificial
 
         for i in range(m) :
-            # Negative constant need to introduce a artificial variables
+            # Negative constant need to Introduce a artificial variables
             if self.T[i,-1] < 0 :
                 # Namespace of artificial variables starts just beyond
                 self.basis[i] = n + self.n_slack + avcount
@@ -952,7 +973,6 @@ class Tableau:
         if debug:
             print("T:")
             print(self.T)
-        
 
 
     def pivot_column(self,T,tol=global_tolerance):
@@ -968,16 +988,23 @@ class Tableau:
         """ Find the appropriate pivot row. """
         # Skip objective rows, in first phase we have two objective rows
         # including a psuedo-objective row.
-        
+
         skip_rows = 2 if (phase == 1) else 1
 
         # Mask values less than tolerance
         ignored = lambda e: (e is None) or ( e <= tol )
 
+        # print(">> T\n %s"%T)
+        # print(">> T[:-skip_rows,pivcol] : \n %s",T[:-skip_rows,pivcol])
+        # print(">> T[:-skip_rows] :\n %s",T[:-skip_rows])
+        # only seem to be getting back a single integer
+        # need to get all rows except the skipped rows
+
         ma = T[:-skip_rows,pivcol].masked_where(ignored)
 
         # All pivot column entries
-        if ma.count_notnone() == 0 : return (False,None)
+        if ma.count_notnone() == 0 :
+            return (False,None)
 
         mb = self.T[:-skip_rows,-1].masked_where(ignored)
 
@@ -1006,7 +1033,7 @@ class Tableau:
             print("T : \n%s" % T)
             print("Basic Variables : %s\n" % basis)
             print("Current Objective Value:\n%s\n" % -T[-1,-1])
-            
+
 
     def simplex_solve(self, T, n, basis, phase =2, tol = global_tolerance):
         # Ignore original and new objectives.
@@ -1074,7 +1101,6 @@ class Tableau:
 
 
     def solve(self):
-
         # Pivot to basic flexible.
         status, complete = self.simplex_solve(self.T,self.n,self.basis,phase=1)
 
@@ -1097,39 +1123,29 @@ class Tableau:
 
         if status == 0:
             obj,ansx = -self.T[-1,-1], [0] * self.nvars
+        else:
+            raise Exception("Expected status == 0")
 
         print("found objective: %f" % obj)
 
         return (status,ansx)
 
-    @staticmethod
-    def parse(stream=sys.stdin,file=None):
-        if file:
-            stream = open(file,"r")
-        with stream as stream:
-            n, m = list(map(int, stream.readline().split()))
-            A = []
-            for i in range(n):
-                A += [list(map(int, stream.readline().split()))]
-            b = list(map(int, stream.readline().split()))
-            c = list(map(int, stream.readline().split()))
-            return Tableau(A,b,c,n,m)
-        
+
 class SciPy:
-    
+
     import sys
     import numpy as np
     import lprog
-    
+
     def __init__(self,A,b,c,n,m):
         (self.A,self.b,self.c) =  (A,b,c)
         self.n = n
         self.m = m
 
-    def solve(self,tolerance = global_tolerance):    
+    def solve(self,tolerance = global_tolerance):
         import sys
         import numpy as np
-        import lprog            
+        import lprog
         linprog_res = lprog.linprog([ -x for x in self.c ],
                                     A_ub = self.A,
                                     b_ub = self.b,
@@ -1153,12 +1169,14 @@ class Simplex:
         self.m = m
         self.fp_op = fp_ops(rel_tol=global_tolerance,abs_tol=global_tolerance)
 
+
     @staticmethod
     def answer_type_str(anst):
         try:
             return ["No solution","Bounded solution","Infinity"][anst+1]
         except :
             return "Unrecognized Answer : %s" % anst
+
 
     def find_basic_feasible(self, min_idx):
         "Find basic feasible solution."
@@ -1267,7 +1285,7 @@ class Simplex:
 
             # basic solution is already feasible
             opt,ansx = None,None
-            if self.fp_op.ispositive(min_constant): # Basic form already in feasible form
+            if self.fp_op.ispositive(min_constant): # basic form already in feasible form
                 opt,ansx = SlackForm(simplex=self).solve(phase=2)
                 self.optimum = opt
                 self.assignment = ansx
@@ -1311,7 +1329,7 @@ class Simplex:
 
         # set nvars column to -1
         aux_A.set_column_value(self.m,-1)
-        
+
         return Simplex(aux_A,aux_b,aux_c,self.n,self.m+1)
 
 
@@ -1336,7 +1354,7 @@ class Simplex:
                                     options  = { 'tol': tolerance, },
                                     callback = lprog.linprog_verbose_callback)
         return linprog_res
-    
+
 
     def verify_scipy(self,tolerance=1e-3):
         import sys
@@ -1344,7 +1362,7 @@ class Simplex:
         from scipy.optimize import linprog
 
         linprog_res = self.solve_scipy()
-        
+
         if debug:
             print("max_myprog = %f " % self.optimum)
             print ("linprog_res.status : %f " % linprog_res.status)
@@ -1352,18 +1370,22 @@ class Simplex:
             assert (linprog_res.status == 0)
 
         max_ref = np.dot(simplex.c, linprog_res.x)
+
         if debug:
             print('max_ref = %f' % max_ref)
             print('tolerance = %f' % tolerance)
             print("delta= %f " % abs(self.fp_op.sub(simplex.optimum , max_ref)))
             print(" %s " % linprog_res)
-        assert (abs(self.fp_op.sub(simplex.optimum , max_ref)) <= tolerance)
+
+        assert(abs(self.fp_op.sub(simplex.optimum , max_ref)) <= tolerance)
 
     def __repr__(self): return "A:\n%s\nb:\n%s\nc:\n%s\n" % (self.A,self.b,self.c)
+
     def  __str__(self): return self.__repr__()
 
-    
+
 class Reader:
+
     @staticmethod
     def parse(stream=sys.stdin,file=None):
         if file:
@@ -1376,7 +1398,7 @@ class Reader:
             b = list(map(int, stream.readline().split()))
             c = list(map(int, stream.readline().split()))
             return (A,b,c,n,m)
-        
+
 if __name__ =="__main__":
     parser = argparse.ArgumentParser(prog="simplex.py",
                                      description='Run simplex on matrix from standard input.')
@@ -1393,28 +1415,31 @@ if __name__ =="__main__":
         global_tolerance = float(args.tolerance)
 
     (A,b,c,n,m) = Reader.parse()
-    
+
     tableau = Tableau(A,b,c,n,m)
     simplex = Simplex(A,b,c,n,m)
-    scipy = SciPy(A,b,c,n,m)
-    
-    print("-------------------- Tableau --------------------")
-    t_anst, t_ansx = tableau.solve()
-    print("-------------------- ------- --------------------")
-
-    print("-------------------- Simplex --------------------")
-    anst, ansx = simplex.solve()
-    print("-----------------------------------------------")
+    scipy   = SciPy(A,b,c,n,m)
 
     print("-------------------- Scipy --------------------")
     l_anst, l_ansx = scipy.solve()
+    print("---------------------End:Scipy--------------------")
+
+    print("-------------------- Tableau --------------------")
+    t_anst, t_ansx =  tableau.solve()
+    print("-------------------------------------------------")
+
+    print("-------------------- Simplex --------------------")
+    anst, ansx = (None,None) #simplex.solve()
     print("-----------------------------------------------")
-    
+
+
+
     print(Simplex.answer_type_str(anst))
 
     if anst == 0:
         print(' '.join(list(map(lambda x : '%.18f' % x, ansx))))
-        simplex.verify_bounds(tolerance=global_tolerance)
+        simplex.verify_bounds(tolerance = global_tolerance)
+
         if args.verify:
             simplex.verify_scipy(tolerance=global_tolerance)
 
