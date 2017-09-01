@@ -757,7 +757,7 @@ def _linprog_simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
         raise ValueError(message)
 
     # Create the tableau
-    T = np.zeros([m+2, n+n_slack+n_artificial+1])
+    T = np.zeros([m + 2, n + n_slack + n_artificial + 1])
 
     # Insert objective into tableau
     T[-2, :n] = cc
@@ -770,6 +770,15 @@ def _linprog_simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
         T[:meq, :n] = Aeq
         # Add beq to the tableau
         b[:meq] = beq
+
+    # All the upper bound constraints are added after the equality
+    # constraints. Starting with last equality constraint and going
+    # till the n'th column. 
+    #
+    # For every slack variable in an upper-bound constraint add
+    # variable by appending a diagonal matrix D of dimensions (m-meq)* (n_slack)
+    # 
+
     if mub > 0:
         # Add Aub to the tableau
         T[meq:meq+mub, :n] = Aub
@@ -778,17 +787,21 @@ def _linprog_simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
         # Add the slack variables to the tableau
         np.fill_diagonal(T[meq:m, n:n+n_slack], 1)
 
-    # Further set up the tableau.
-    # If a row corresponds to an equality constraint or a negative b (a lower
-    # bound constraint), then an artificial variable is added for that row.
-    # Also, if b is negative, first flip the signs in that constraint.
+    # Further set up the tableau. If a row corresponds to an equality
+    # constraint or a negative b (a lower bound constraint), then an
+    # artificial variable is added for that row.  Also, if b is
+    # negative, first flip the signs in that constraint.
+
     slcount = 0
     avcount = 0
     basis = np.zeros(m, dtype=int)
+    
     r_artificial = np.zeros(n_artificial, dtype=int)
+    
     for i in range(m):
         if i < meq or b[i] < 0:
-            # basic variable i is in column n+n_slack+avcount
+            # Basic variable i is in column n+n_slack+avcount
+            # Basis will contain artificial variables
             basis[i] = n+n_slack+avcount
             r_artificial[avcount] = i
             avcount += 1
@@ -800,6 +813,7 @@ def _linprog_simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
             T[-1, basis[i]] = 1
         else:
             # basic variable i is in column n+slcount
+            # Add slack variables to the basis
             basis[i] = n+slcount
             slcount += 1
     # basis will contain aritificial varaibles and slack variables
@@ -814,7 +828,7 @@ def _linprog_simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
         print("Basis : %s " % basis)
         print("Artificial : %s " % r_artificial)
 
-        rows,cols = T.shape
+        rows,cols = T.shape        
         for i in range(rows):
             for j in range(cols):
                 print(" %+3.2f "%T[i,j],end='')
